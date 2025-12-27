@@ -1,10 +1,8 @@
 #include "PacketPlayground.h"
-#include "Socket.h"
 
-int main() 
+int main()
 {
-	Socket socket;
-	PacketPlayground ppg(socket);
+	PacketPlayground ppg;
 	ppg.Init();
 
 	return 0;
