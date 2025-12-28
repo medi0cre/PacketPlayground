@@ -20,13 +20,9 @@ void Socket::SetFlag(const int flag)
 	m_hints.ai_flags = flag;
 }
 
-void Socket::GetAddressInfo(const std::string& URL, const std::string& port) 
+void Socket::GetAddressInfo(const char* URL, const char* port) 
 {
-	if (getaddrinfo(URL.c_str(), port.c_str(), &m_hints, &m_info) == 0)
-	{
-		std::cout << "Acquired address info\n";
-	}
-	else 
+	if (getaddrinfo(URL, port, &m_hints, &m_info) != 0)
 	{
 		std::cerr << "Error obtaining address info\n";
 	}
@@ -40,7 +36,18 @@ void Socket::SetConnectionCount(const int count)
 void Socket::Init() 
 {
 	m_fileDesc = static_cast<int>(socket(m_info->ai_family, m_info->ai_socktype, m_info->ai_protocol));
-	bind(m_fileDesc, m_info->ai_addr, static_cast<int>(m_info->ai_addrlen));
+
+	if (m_fileDesc == -1) 
+	{
+		std::cerr << "Error obtaining socket file descriptor\n";
+		return;
+	}
+
+	if (bind(m_fileDesc, m_info->ai_addr, static_cast<int>(m_info->ai_addrlen)) == -1) 
+	{
+		std::cerr << "Error binding socket\n";
+		Close();
+	}
 }
 
 void Socket::Connect() 
@@ -50,13 +57,21 @@ void Socket::Connect()
 
 void Socket::Listen()
 {
-	listen(m_fileDesc, m_connectionCount);
+	if (listen(m_fileDesc, m_connectionCount) == -1) 
+	{
+		std::cerr << "Socket listening error\n";
+	}
 }
 
 void Socket::Accept() 
 {
 	m_addressSize = sizeof(m_storage);
-	m_acceptDesc = accept(m_fileDesc, (struct sockaddr*)&m_storage, &m_addressSize);
+	m_acceptDesc = accept(m_fileDesc, reinterpret_cast<sockaddr*>(&m_storage), &m_addressSize);
+
+	if (m_acceptDesc == -1) 
+	{
+		std::cerr << "Error accepting socket connection\n";
+	}
 }
 
 void Socket::Send(const char* message, const int length)
@@ -77,4 +92,19 @@ void Socket::Close()
 void Socket::FreeAddress() 
 {
 	freeaddrinfo(m_info);
+}
+
+struct addrinfo* Socket::Info()
+{
+	return m_info;
+}
+
+const int Socket::FileDesc() 
+{
+	return m_fileDesc;
+}
+
+sockaddr_storage& Socket::Storage() 
+{
+	return m_storage;
 }
