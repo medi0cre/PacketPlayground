@@ -1,12 +1,5 @@
 #include "PacketPlayground.h"
 
-PacketPlayground::PacketPlayground(const Socket& socket) 
-{
-	this->m_socket = socket;
-}
-
-PacketPlayground::~PacketPlayground() {}
-
 void PacketPlayground::Init() 
 {
     WSADATA wsaData;
@@ -23,4 +16,14 @@ void PacketPlayground::Init()
         WSACleanup();
         std::exit(2);
     }
+}
+
+void PacketPlayground::StartServer() 
+{
+    m_server.Start();
+}
+
+void PacketPlayground::StartClient()
+{
+    m_client.Start();
 }
