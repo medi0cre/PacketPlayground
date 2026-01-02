@@ -4,7 +4,7 @@ int main()
 {
 	PacketPlayground ppg;
 	ppg.Init();
-	ppg.StartServer();
+	ppg.StartClient();
 
 	return 0;
 }

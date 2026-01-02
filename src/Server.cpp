@@ -11,19 +11,16 @@ void Server::Start()
 
     for (addrinfo* p = m_socket.Info(); p != NULL; p = p->ai_next) 
     {
-        m_socket.Init();
+        if (!m_socket.Init()) 
+        {
+            continue;
+        }
 
         const char options = 1;
 
         if (setsockopt(m_socket.FileDesc(), SOL_SOCKET, SO_REUSEADDR, &options, sizeof(int)) == -1)
         {
             std::cerr << "Error setting socket options\n";
-            std::exit(1);
-        }
-
-        if (p == NULL) 
-        {
-            std::cerr << "Server: Failed to bind port\n";
             std::exit(1);
         }
 

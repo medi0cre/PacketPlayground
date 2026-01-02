@@ -22,3 +22,8 @@ void PacketPlayground::StartServer()
 {
     m_server.Start();
 }
+
+void PacketPlayground::StartClient()
+{
+    m_client.Start();
+}

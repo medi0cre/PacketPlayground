@@ -15,27 +15,29 @@ private:
 	addrinfo* m_info = nullptr;
 	addrinfo* m_pointer = nullptr;
 	sockaddr_storage m_storage = {};
-	char* m_buffer = nullptr;
+	char m_buffer[100];
 
 public:
 	char IP[INET6_ADDRSTRLEN] = "";
+
+	bool Init();
+	bool GetAddressInfo(const char* URL, const char* port);
+	bool Connect();
+	bool Listen();
+	bool Accept();
+	bool Send(const char* message, const int length);
+	bool Receive(const int length);
 
 	void ResetMemory();
 	void SetFamily(const int family);
 	void SetSocketType(const int type);
 	void SetConnectionCount(const int count);
 	void SetFlag(const int flag);
-	void GetAddressInfo(const char* URL, const char* port);
-	void Init();
-	void Connect();
-	void Listen();
-	void Accept();
-	void Send(const char* message, const int length);
-	void Receive(const int length);
 	void Close();
 	void FreeAddress();
 
 	addrinfo* Info();
 	const int FileDesc();
 	sockaddr_storage& Storage();
+	char* Buffer();
 };

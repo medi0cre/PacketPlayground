@@ -12,4 +12,5 @@ private:
 public:
 	void Init();
 	void StartServer();
+	void StartClient();
 };
