@@ -3,15 +3,6 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
-struct HTTPRequest 
-{
-    std::string Method = "";
-    std::string URI = "";
-    std::string Version = "";
-    std::string Body = "";
-    std::unordered_map<std::string, std::string> Headers{};
-};
-
 void Assert(bool Condition, const std::string& Message) 
 {
     if (!Condition)
@@ -19,6 +10,34 @@ void Assert(bool Condition, const std::string& Message)
         std::cerr << Message << "\n";
         std::abort();
     }
+}
+
+std::vector<std::string> SplitByDelimiter(const std::string& Input, const std::string& Delimiter) 
+{
+    std::vector<std::string> Result{};
+    uint64_t Start = 0;
+
+    if (Delimiter.empty()) 
+    {
+        Result.push_back(Input);
+        return Result;
+    }
+
+    while (true) 
+    {
+        uint64_t End = Input.find(Delimiter, Start);
+
+        if (End == std::string::npos) 
+        {
+            Result.emplace_back(Input.substr(Start));
+            break;
+        }
+
+        Result.emplace_back(Input.substr(Start, End - Start));
+        Start = End + Delimiter.length();
+    }
+
+    return Result;
 }
 
 int main(int argc, char* argv[])
@@ -182,6 +201,22 @@ int main(int argc, char* argv[])
                     {
                         // Received some good data from the client
                         // @todo: Implement an HTTP parser to check client requests
+                        std::string RawData(Message, NumBytes);
+                        std::vector<std::string> HeadAndBody = SplitByDelimiter(RawData, "\r\n\r\n");
+                        Assert(HeadAndBody.size() == 2, "HTTP request format is invalid");
+
+                        std::vector<std::string> HeaderLines = SplitByDelimiter(HeadAndBody[0], "\r\n");
+                        std::unordered_map<std::string, std::string> Headers{};
+                        
+                        std::vector<std::string> RequestLine = SplitByDelimiter(HeaderLines[0], " ");
+                        Assert(RequestLine.size() == 3 && RequestLine[0] == "GET", "Invalid request line");
+
+                        for (uint16_t i = 1; i < HeaderLines.size(); i++) 
+                        {
+                            std::vector<std::string> KeyValue = SplitByDelimiter(HeaderLines[i], ":");
+                            Assert(KeyValue.size() == 2, "Error getting key value pair");
+                            Headers[KeyValue[0]] = KeyValue[1];
+                        }
                     }
                 }
             }
