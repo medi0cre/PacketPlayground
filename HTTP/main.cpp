@@ -1,7 +1,9 @@
 #include <iostream>
+#include <vector>
 #include <unordered_map>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <cstdint>
 
 void Assert(bool Condition, const std::string& Message) 
 {
@@ -65,8 +67,8 @@ int main(int argc, char* argv[])
         std::exit(2);
     }
 
-    Hints.ai_family = AF_UNSPEC;   
-    Hints.ai_socktype = SOCK_STREAM; 
+    Hints.ai_family = AF_UNSPEC;
+    Hints.ai_socktype = SOCK_STREAM;
     Hints.ai_flags = AI_PASSIVE;
 
     //Assert(getaddrinfo(argv[1], argv[2], &Hints, &InfoLL) == 0, "Failed to obtain address info");
@@ -74,7 +76,7 @@ int main(int argc, char* argv[])
 
     for (Info = InfoLL; Info != nullptr; Info = Info->ai_next) 
     {
-        if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == -1) 
+        if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == -1)
         {
             std::cerr << "socket() error\n";
             continue;
@@ -125,11 +127,11 @@ int main(int argc, char* argv[])
                     char RemoteIP[INET6_ADDRSTRLEN] = "";
 
                     NewFD = accept(ListenFD, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
-                    if (NewFD == -1) 
+                    if (NewFD == -1)
                     {
                         std::cerr << "Failed to accept socket connection\n";
                     }
-                    else 
+                    else
                     {
                         if (FDCount >= 32) 
                         {
@@ -172,7 +174,7 @@ int main(int argc, char* argv[])
                         }
                     }
                 }
-                else 
+                else
                 {
                     char Message[1024];
                     int NumBytes = recv(PFDS[i].fd, Message, sizeof(Message), 0);
@@ -180,14 +182,14 @@ int main(int argc, char* argv[])
 
                     Assert(NumBytes <= 1024, "Message was too big to fit in the buffer");
 
-                    if (NumBytes <= 0) 
-                    { 
+                    if (NumBytes <= 0)
+                    {
                         // Got error or connection closed by client
-                        if (NumBytes == 0) 
+                        if (NumBytes == 0)
                         {
                             std::cerr << "Socket " << SenderFD << " closed the connection\n";
                         }
-                        else 
+                        else
                         {
                             std::cerr << "Error receiving message from socket " << SenderFD << "\n";
                         }
@@ -197,7 +199,7 @@ int main(int argc, char* argv[])
                         FDCount--;
                         i--;
                     }
-                    else 
+                    else
                     {
                         // Received some good data from the client
                         // @todo: Implement an HTTP parser to check client requests
@@ -207,15 +209,19 @@ int main(int argc, char* argv[])
 
                         std::vector<std::string> HeaderLines = SplitByDelimiter(HeadAndBody[0], "\r\n");
                         std::unordered_map<std::string, std::string> Headers{};
-                        
+
                         std::vector<std::string> RequestLine = SplitByDelimiter(HeaderLines[0], " ");
                         Assert(RequestLine.size() == 3 && RequestLine[0] == "GET", "Invalid request line");
 
-                        for (uint16_t i = 1; i < HeaderLines.size(); i++) 
+                        for (uint16_t i = 1; i < HeaderLines.size(); i++)
                         {
-                            std::vector<std::string> KeyValue = SplitByDelimiter(HeaderLines[i], ":");
-                            Assert(KeyValue.size() == 2, "Error getting key value pair");
-                            Headers[KeyValue[0]] = KeyValue[1];
+                            uint64_t Pos = HeaderLines[i].find(":", 0);
+                            Assert(Pos != std::string::npos, "Failed to find : character in header");
+
+                            std::string Key = HeaderLines[i].substr(0, Pos);
+                            std::string Value = HeaderLines[i].substr(Pos + 1);
+
+                            Headers[Key] = Value;
                         }
                     }
                 }
