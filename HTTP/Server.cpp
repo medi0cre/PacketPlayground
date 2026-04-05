@@ -6,6 +6,7 @@
 
 HTTP::Server::Server(const char* IPAddress, const char* Port)
 {
+	// Load winsock API version 2.2
     WSADATA Data{};
     Enforce(WSAStartup(MAKEWORD(2, 2), &Data) == 0, "Failed to load WinSock");
     Enforce(LOBYTE(Data.wVersion) == 2 && HIBYTE(Data.wVersion) == 2 , "Version 2.2 of Winsock not available.");
@@ -14,6 +15,7 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
     addrinfo Hints{};
     addrinfo* InfoLinkedList = nullptr;
 
+	// TCP sockets because UDP is for people who like shooting themselves in the foot!
     Hints.ai_family = AF_UNSPEC;
     Hints.ai_socktype = SOCK_STREAM;
     Hints.ai_flags = AI_PASSIVE; 
@@ -23,18 +25,18 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
     int32_t ListenFD = -1;
     for (addrinfo* Info = InfoLinkedList; Info != nullptr; Info = Info->ai_next)
     {
-        if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == -1)
+        if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == SOCKET_ERROR)
         {
             std::cerr << "Invalid socket, trying the next one...\n";
             continue;
         }
 
         char Options = 1;
-        Enforce(setsockopt(ListenFD, SOL_SOCKET, SO_REUSEADDR, &Options, sizeof(Options)) != -1, "Failed to set socket options");
+        Enforce(setsockopt(ListenFD, SOL_SOCKET, SO_REUSEADDR, &Options, sizeof(Options)) == 0, "Failed to set socket options");
 
-        if (bind(ListenFD, Info->ai_addr, Info->ai_addrlen) == -1)
+        if (bind(ListenFD, Info->ai_addr, Info->ai_addrlen) == SOCKET_ERROR)
         {
-            closesocket(ListenFD);
+            closesocket(ListenFD) == 0;
             std::cerr << "Failed to bind socket, trying the next one...\n";
             continue;
         }
@@ -44,15 +46,16 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
     }
 
 	Enforce(ListenFD != -1, "Failed to get valid listening socket");
-	Enforce(listen(ListenFD, 32) != -1, "Failed to listen for incoming connections");
+	Enforce(listen(ListenFD, MaxConnections) == 0, "Failed to listen for incoming connections");
 	freeaddrinfo(InfoLinkedList);
-
-    ConnectionList = new pollfd[32]();
+	InfoLinkedList = nullptr;
+	
+    ConnectionList = new pollfd[MaxConnections]();
 	ConnectionList[0].fd = ListenFD;
 	ConnectionList[0].events = POLLIN;
 	ConnectionCount++;
 
-    MessageBuffer = new char[32768 * 32]();
+    MessageBuffer = new char[BufferSize * MaxConnections]();
 }
 
 void HTTP::Server::Run()
@@ -62,16 +65,16 @@ void HTTP::Server::Run()
 	while (true) 
     {
         // Start polling with -1 timeout to poll forever
-        Enforce(WSAPoll(ConnectionList, ConnectionCount, -1) != -1, "Error occured during polling");
+        Enforce(WSAPoll(ConnectionList, ConnectionCount, -1) != SOCKET_ERROR, "Error occured during polling");
 
-        for (uint8_t i = 0; i < ConnectionCount; i++) 
+        for (uint8_t ConnectionIndex = 0; ConnectionIndex < ConnectionCount; ConnectionIndex++) 
         {
-            if (ConnectionList[i].revents & (POLLIN | POLLHUP)) 
+            if (ConnectionList[ConnectionIndex].revents & (POLLIN | POLLHUP)) 
             {
-                if (i == 0)
+                if (ConnectionIndex == 0)
 					HandleNewConnection();
                 else
-					HandleClientData(i);
+					HandleClientData(ConnectionIndex);
             }
         }
     }
