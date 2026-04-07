@@ -94,7 +94,7 @@ void HTTP::Server::HandleNewConnection()
 	}
 	else
 	{
-		if (ConnectionCount >= 32)
+		if (ConnectionCount >= MaxConnections)
 		{
 			std::cout << "No room in poll buffer to add new connection\n";
 		}
@@ -104,7 +104,6 @@ void HTTP::Server::HandleNewConnection()
 			ConnectionList[ConnectionCount].fd = NewFD;
 			ConnectionList[ConnectionCount].events = POLLIN;
 			ConnectionList[ConnectionCount].revents = 0;
-
 			ConnectionCount++;
 
 			// Find out the IP address string of the socket
@@ -159,7 +158,6 @@ void HTTP::Server::HandleClientData(uint8_t Index)
 	std::string RawData(Message, NumBytes);
     Request Req = ParseRequest(RawData);
     
-    // Find matching route
     std::string Key = Req.Method + ":" + Req.URI;
     auto It = Routes.find(Key);
     
@@ -182,21 +180,19 @@ HTTP::Request HTTP::Server::ParseRequest(const std::string& RawData)
     Request Req{};
 
     std::vector<std::string> Parts = SplitByDelimiter(RawData, "\r\n\r\n");
-    if (Parts.empty()) return Req;
+    if (Parts.size() != 2) return Req;
 
     std::vector<std::string> Lines = SplitByDelimiter(Parts[0], "\r\n");
     if (Lines.empty()) return Req;
 
-    // Parse request line
     std::vector<std::string> RequestLine = SplitByDelimiter(Lines[0], " ");
-    if (RequestLine.size() >= 3)
-    {
-        Req.Method = RequestLine[0];
-        Req.URI = RequestLine[1];
-        Req.Version = RequestLine[2];
-    }
+    if (RequestLine.size() != 3) return Req;
+    
+    Req.Method = RequestLine[0];
+    Req.URI = RequestLine[1];
+    Req.Version = RequestLine[2];
+    Req.Body = Parts[1];
 
-    // Parse headers
     for (uint64_t i = 1; i < Lines.size(); i++)
     {
         uint64_t ColonPosition = Lines[i].find(':');
@@ -206,12 +202,6 @@ HTTP::Request HTTP::Server::ParseRequest(const std::string& RawData)
             std::string Value = Trim(Lines[i].substr(ColonPosition + 1));
             Req.Headers[Key] = Value;
         }
-    }
-
-    // Parse body
-    if (Parts.size() >= 2)
-    {
-        Req.Body = Parts[1];
     }
 
     return Req;
@@ -241,7 +231,10 @@ void HTTP::Server::RemoveConnection(uint8_t Index)
 {
 	if (Index <= 0 || Index >= MaxConnections)
 		return;
-	
+    
+    Enforce(closesocket(ConnectionList[Index].fd) == 0, "Failed to close client socket");
+    ConnectionList[Index] = ConnectionList[ConnectionCount - 1];
+    ConnectionCount--;
 	
 	std::memset(MessageBuffer + BufferSize * Index, 0, BufferSize);
 }
