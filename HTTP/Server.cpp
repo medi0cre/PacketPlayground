@@ -36,7 +36,7 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
 
         if (bind(ListenFD, Info->ai_addr, Info->ai_addrlen) == SOCKET_ERROR)
         {
-            closesocket(ListenFD) == 0;
+            closesocket(ListenFD);
             std::cerr << "Failed to bind socket, trying the next one...\n";
             continue;
         }
