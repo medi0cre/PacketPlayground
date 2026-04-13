@@ -15,7 +15,8 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
     addrinfo Hints{};
     addrinfo* InfoLinkedList = nullptr;
 
-	// TCP sockets because UDP is for people who like shooting themselves in the foot!
+	// TCP sockets because UDP is for people who enjoy 
+	// shooting themselves in the foot with military precision!
     Hints.ai_family = AF_UNSPEC;
     Hints.ai_socktype = SOCK_STREAM;
     Hints.ai_flags = AI_PASSIVE; 
@@ -162,14 +163,31 @@ void HTTP::Server::HandleClientData(uint8_t Index)
     auto It = Routes.find(Key);
     
     Response Res{};
+
     if (It != Routes.end())
     {
         Res = It->second(Req);
     }
     else
     {
-        //@ todo Create a 404 Response
-        //Res = CreateResponse(404, "404 Not Found", "text/html");
+        std::string NotFoundBody = "<html>"
+                                     "<head><title>404 Not Found</title></head>"
+                                     "<body>"
+                                       "<h1>Not Found</h1>"
+                                       "<p>The requested resource was not found on this server.</p>"
+                                     "</body>"
+                                   "</html>";
+
+        ResponseBuilder Builder{};
+        Res = Builder
+            .Version("HTTP/1.1")
+            .StatusCode(404)
+            .Status("Not Found")
+            .Header("Content-Type", "text/html")
+            .Header("Content-Length", std::to_string(NotFoundBody.size()))
+            .Header("Connection", "close")
+            .Body(NotFoundBody)
+            .Build();
     }
     
     SendResponse(ConnectionList[Index].fd, Res);
@@ -207,9 +225,21 @@ HTTP::Request HTTP::Server::ParseRequest(const std::string& RawData)
     return Req;
 }
 
+std::string HTTP::Server::CreateResponseString(const Response& Res)
+{
+    std::string Result = "";
+    Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
+    
+    for (const auto& Header: Res.Headers)
+        Result += Header.first + ": " + Header.second + "\r\n";
+
+    Result += "\r\n" + Res.Body;
+    return Result;
+}
+
 void HTTP::Server::SendResponse(uint8_t ClientFD, const Response& Res)
 {
-    std::string ResponseString;// = Resp.ToString();
+    std::string ResponseString = CreateResponseString(Res);
     uint32_t TotalSent = 0;
     uint32_t Remaining = ResponseString.size();
     
@@ -250,15 +280,52 @@ HTTP::Server::~Server()
 {
     Enforce(closesocket(ConnectionList[0].fd) == 0, "Failed to close the listening socket");
 
-    if (ConnectionList)
-    {
+    if (ConnectionList != nullptr)
         delete[] ConnectionList;
-    }
 
-    if (MessageBuffer)
-    {
+    if (MessageBuffer != nullptr)
         delete[] MessageBuffer;
-    }
 	
     WSACleanup();
+}
+
+HTTP::Response& HTTP::ResponseBuilder::Build()
+{
+	return Res;
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::Reset()
+{
+	Res = {};
+	return *this;
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::Version(const std::string& Version)
+{
+	Res.Version = Version;
+	return *this;
+} 
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::StatusCode(uint16_t StatusCode)
+{
+	Res.StatusCode = StatusCode;
+	return *this;
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::Status(const std::string& Status)
+{
+	Res.Status = Status;
+	return *this;
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::Body(const std::string& Body)
+{
+	Res.Body = Body;
+	return *this;
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::Header(const std::string& Key, const std::string& Value)
+{
+	Res.Headers[Key] = Value;
+	return *this;
 }
