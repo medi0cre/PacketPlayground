@@ -54,5 +54,4 @@
 *.log
 *.ilk
 *.idb
-*.bat
 build
