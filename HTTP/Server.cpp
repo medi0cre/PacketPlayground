@@ -237,7 +237,7 @@ std::string HTTP::Server::CreateResponseString(const Response& Res)
     return Result;
 }
 
-void HTTP::Server::SendResponse(uint8_t ClientFD, const Response& Res)
+void HTTP::Server::SendResponse(int32_t ClientFD, const Response& Res)
 {
     std::string ResponseString = CreateResponseString(Res);
     uint32_t TotalSent = 0;

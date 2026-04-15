@@ -58,7 +58,7 @@ namespace HTTP
 			
 	    void HandleNewConnection();
 	    void HandleClientData(uint8_t Index);
-	    void SendResponse(uint8_t ClientFD, const Response& Res);
+	    void SendResponse(int32_t ClientFD, const Response& Res);
 	    void RemoveConnection(uint8_t Index);
         
         std::string CreateResponseString(const Response& Res);
