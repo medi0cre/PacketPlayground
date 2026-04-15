@@ -54,3 +54,4 @@
 *.log
 *.ilk
 *.idb
+build
