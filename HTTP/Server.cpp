@@ -89,60 +89,51 @@ void HTTP::Server::HandleNewConnection()
 	char RemoteIP[INET6_ADDRSTRLEN] = "";
 
 	NewFD = accept(ConnectionList[0].fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
-	if (NewFD == -1)
-	{
-		std::cerr << "Failed to accept socket connection\n";
-	}
+	Enforce(NewFD != -1, "Invalid file descriptor obtained from accept() call");
+	
+	if (ConnectionCount >= MaxConnections)
+		std::cout << "No room in poll buffer to add new connection\n";
 	else
 	{
-		if (ConnectionCount >= MaxConnections)
+		// Add the new socket to the poll
+		ConnectionList[ConnectionCount].fd = NewFD;
+		ConnectionList[ConnectionCount].events = POLLIN;
+		ConnectionList[ConnectionCount].revents = 0;
+		ConnectionCount++;
+
+		// Find out the IP address string of the socket
+		sockaddr_in* SA4 = nullptr;
+		sockaddr_in6* SA6 = nullptr;
+		void* Src = nullptr;
+
+		switch (RemoteAddr.ss_family) 
 		{
-			std::cout << "No room in poll buffer to add new connection\n";
+		case AF_INET:
+			SA4 = reinterpret_cast<sockaddr_in*>(&RemoteAddr);
+			Src = &(SA4->sin_addr);
+			break;
+		case AF_INET6:
+			SA6 = reinterpret_cast<sockaddr_in6*>(&RemoteAddr);
+			Src = &(SA6->sin6_addr);
+			break;
+		default:
+			std::cerr << "Failed to detect either IPV4 or IPV6\n";
+			break;
 		}
-		else
-		{
-			// Add the new socket to the poll
-			ConnectionList[ConnectionCount].fd = NewFD;
-			ConnectionList[ConnectionCount].events = POLLIN;
-			ConnectionList[ConnectionCount].revents = 0;
-			ConnectionCount++;
 
-			// Find out the IP address string of the socket
-			sockaddr_in* SA4 = nullptr;
-			sockaddr_in6* SA6 = nullptr;
-			void* Src = nullptr;
+		Enforce(Src != nullptr, "Src is null");
+		inet_ntop(RemoteAddr.ss_family, Src, RemoteIP, sizeof(RemoteIP));
 
-			switch (RemoteAddr.ss_family) 
-			{
-			case AF_INET:
-				SA4 = reinterpret_cast<sockaddr_in*>(&RemoteAddr);
-				Src = &(SA4->sin_addr);
-				break;
-			case AF_INET6:
-				SA6 = reinterpret_cast<sockaddr_in6*>(&RemoteAddr);
-				Src = &(SA6->sin6_addr);
-				break;
-			default:
-				std::cerr << "Failed to detect either IPV4 or IPV6\n";
-				break;
-			}
-
-			Enforce(Src != nullptr, "Src is null");
-			inet_ntop(RemoteAddr.ss_family, Src, RemoteIP, sizeof(RemoteIP));
-
-			std::cout << "New connection from " << RemoteIP;
-			std::cout << " on socket " << NewFD << "\n";
-		}
+		std::cout << "New connection from " << RemoteIP;
+		std::cout << " on socket " << NewFD << "\n";
 	}
 }
 
-void HTTP::Server::HandleClientData(uint8_t Index)
+void HTTP::Server::HandleClientData(uint8_t& Index)
 {
 	char* Message = MessageBuffer + BufferSize * Index;
 	int32_t NumBytes = recv(ConnectionList[Index].fd, Message, BufferSize, 0);
 	int32_t SenderFD = ConnectionList[Index].fd;
-
-	Enforce(NumBytes <= BufferSize, "Message was too big to fit in the buffer");
 
 	if (NumBytes <= 0)
 	{
@@ -152,7 +143,12 @@ void HTTP::Server::HandleClientData(uint8_t Index)
 		else
 			std::cerr << "Error receiving message from socket " << SenderFD << "\n";
 
-		RemoveConnection(Index);
+		Enforce(closesocket(ConnectionList[Index].fd) == 0, "Failed to close socket inside HandleClientData()");
+
+        ConnectionList[Index] = ConnectionList[ConnectionCount - 1];
+        ConnectionCount--;
+        Index--;
+
 		return;
 	}
 	
@@ -165,9 +161,7 @@ void HTTP::Server::HandleClientData(uint8_t Index)
     Response Res{};
 
     if (It != Routes.end())
-    {
         Res = It->second(Req);
-    }
     else
     {
         std::string NotFoundBody = "<html>"
@@ -255,18 +249,6 @@ void HTTP::Server::SendResponse(int32_t ClientFD, const Response& Res)
         TotalSent += Sent;
         Remaining -= Sent;
     }
-}
-
-void HTTP::Server::RemoveConnection(uint8_t Index)
-{
-	if (Index <= 0 || Index >= MaxConnections)
-		return;
-    
-    Enforce(closesocket(ConnectionList[Index].fd) == 0, "Failed to close client socket");
-    ConnectionList[Index] = ConnectionList[ConnectionCount - 1];
-    ConnectionCount--;
-	
-	std::memset(MessageBuffer + BufferSize * Index, 0, BufferSize);
 }
 
 void HTTP::Server::AddRoute(const std::string& Method, const std::string& Path, std::function<Response(const Request&)> Handler)

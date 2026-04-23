@@ -57,9 +57,8 @@ namespace HTTP
 	    std::unordered_map<std::string, std::function<Response(const Request&)>> Routes{};
 			
 	    void HandleNewConnection();
-	    void HandleClientData(uint8_t Index);
+	    void HandleClientData(uint8_t& Index);
 	    void SendResponse(int32_t ClientFD, const Response& Res);
-	    void RemoveConnection(uint8_t Index);
         
         std::string CreateResponseString(const Response& Res);
 	    Request ParseRequest(const std::string& RawData);
