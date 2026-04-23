@@ -23,7 +23,7 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
 
     Enforce(getaddrinfo(IPAddress, Port, &Hints, &InfoLinkedList) == 0, "Failed to obtain address info");
 
-    int32_t ListenFD = -1;
+    int ListenFD = -1;
     for (addrinfo* Info = InfoLinkedList; Info != nullptr; Info = Info->ai_next)
     {
         if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == SOCKET_ERROR)
@@ -68,7 +68,7 @@ void HTTP::Server::Run()
         // Start polling with -1 timeout to poll forever
         Enforce(WSAPoll(ConnectionList, ConnectionCount, -1) != SOCKET_ERROR, "Error occured during polling");
 
-        for (uint8_t ConnectionIndex = 0; ConnectionIndex < ConnectionCount; ConnectionIndex++) 
+        for (int ConnectionIndex = 0; ConnectionIndex < ConnectionCount; ConnectionIndex++) 
         {
             if (ConnectionList[ConnectionIndex].revents & (POLLIN | POLLHUP)) 
             {
@@ -85,7 +85,7 @@ void HTTP::Server::HandleNewConnection()
 {
 	sockaddr_storage RemoteAddr{};
 	socklen_t AddrLen = sizeof(RemoteAddr);
-	int32_t NewFD = -1;
+	int NewFD = -1;
 	char RemoteIP[INET6_ADDRSTRLEN] = "";
 
 	NewFD = accept(ConnectionList[0].fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
@@ -129,11 +129,11 @@ void HTTP::Server::HandleNewConnection()
 	}
 }
 
-void HTTP::Server::HandleClientData(uint8_t& Index)
+void HTTP::Server::HandleClientData(int& Index)
 {
 	char* Message = MessageBuffer + BufferSize * Index;
-	int32_t NumBytes = recv(ConnectionList[Index].fd, Message, BufferSize, 0);
-	int32_t SenderFD = ConnectionList[Index].fd;
+	int NumBytes = recv(ConnectionList[Index].fd, Message, BufferSize, 0);
+	int SenderFD = ConnectionList[Index].fd;
 
 	if (NumBytes <= 0)
 	{
@@ -205,9 +205,9 @@ HTTP::Request HTTP::Server::ParseRequest(const std::string& RawData)
     Req.Version = RequestLine[2];
     Req.Body = Parts[1];
 
-    for (uint64_t i = 1; i < Lines.size(); i++)
+    for (int i = 1; i < Lines.size(); i++)
     {
-        uint64_t ColonPosition = Lines[i].find(':');
+        int ColonPosition = Lines[i].find(':');
         if (ColonPosition != std::string::npos)
         {
             std::string Key = Trim(Lines[i].substr(0, ColonPosition));
@@ -231,15 +231,15 @@ std::string HTTP::Server::CreateResponseString(const Response& Res)
     return Result;
 }
 
-void HTTP::Server::SendResponse(int32_t ClientFD, const Response& Res)
+void HTTP::Server::SendResponse(int ClientFD, const Response& Res)
 {
     std::string ResponseString = CreateResponseString(Res);
-    uint32_t TotalSent = 0;
-    uint32_t Remaining = ResponseString.size();
+    int TotalSent = 0;
+    int Remaining = ResponseString.size();
     
     while (Remaining > 0)
     {
-        uint32_t Sent = send(ClientFD, ResponseString.c_str() + TotalSent, Remaining, 0);
+        int Sent = send(ClientFD, ResponseString.c_str() + TotalSent, Remaining, 0);
         if (Sent == SOCKET_ERROR)
         {
             std::cerr << "Failed to send response: " << WSAGetLastError() << "\n";
@@ -288,7 +288,7 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::Version(const std::string& Version
 	return *this;
 } 
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::StatusCode(uint16_t StatusCode)
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::StatusCode(int StatusCode)
 {
 	Res.StatusCode = StatusCode;
 	return *this;
