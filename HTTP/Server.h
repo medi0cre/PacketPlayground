@@ -41,6 +41,7 @@ namespace HTTP
 	    ResponseBuilder& Status(const std::string& Status);
 	    ResponseBuilder& Body(const std::string& Body);
 	    ResponseBuilder& Header(const std::string& Key, const std::string& Value);
+        ResponseBuilder& CreateNotFoundResponse();
     };
 
     class Server

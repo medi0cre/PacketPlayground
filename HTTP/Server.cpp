@@ -163,23 +163,9 @@ void HTTP::Server::HandleClientData(int& Index)
         Res = It->second(Req);
     else
     {
-        std::string NotFoundBody = "<html>"
-                                     "<head><title>404 Not Found</title></head>"
-                                     "<body>"
-                                       "<h1>Not Found</h1>"
-                                       "<p>The requested resource was not found on this server.</p>"
-                                     "</body>"
-                                   "</html>";
-
         ResponseBuilder Builder{};
         Res = Builder
-            .Version("HTTP/1.1")
-            .StatusCode(404)
-            .Status("Not Found")
-            .Header("Content-Type", "text/html")
-            .Header("Content-Length", std::to_string(NotFoundBody.size()))
-            .Header("Connection", "close")
-            .Body(NotFoundBody)
+            .CreateNotFoundResponse()
             .Build();
     }
     
@@ -309,4 +295,25 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::Header(const std::string& Key, con
 {
 	Res.Headers[Key] = Value;
 	return *this;
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::CreateNotFoundResponse()
+{
+    const std::string NotFoundBody = "<html>"
+                                       "<head><title>404 Not Found</title></head>"
+                                       "<body>"
+                                         "<h1>Not Found</h1>"
+                                         "<p>The requested resource was not found on this server.</p>"
+                                       "</body>"
+                                     "</html>";
+
+    Res.Version = "HTTP/1.1";
+    Res.StatusCode = 404;
+    Res.Status = "Not Found";
+    Res.Headers["Content-Type"] = "text/html";
+    Res.Headers["Content-Length"] = std::to_string(NotFoundBody.size());
+    Res.Headers["Connection"] = "close";
+    Res.Body = NotFoundBody;
+
+    return *this;
 }
