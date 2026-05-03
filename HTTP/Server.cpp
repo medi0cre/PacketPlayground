@@ -165,7 +165,7 @@ void HTTP::Server::HandleClientData(int& Index)
     {
         ResponseBuilder Builder{};
         Res = Builder
-            .CreateNotFoundResponse()
+            .NotFound()
             .Build();
     }
     
@@ -258,7 +258,8 @@ HTTP::Server::~Server()
 
 HTTP::Response& HTTP::ResponseBuilder::Build()
 {
-	return Res;
+	Res.Headers["Content-Length"] = std::to_string(Res.Body.size());
+    return Res;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::Reset()
@@ -297,7 +298,7 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::Header(const std::string& Key, con
 	return *this;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::CreateNotFoundResponse()
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::NotFound()
 {
     const std::string NotFoundBody = "<html>"
                                        "<head><title>404 Not Found</title></head>"
@@ -307,13 +308,34 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::CreateNotFoundResponse()
                                        "</body>"
                                      "</html>";
 
-    Res.Version = "HTTP/1.1";
-    Res.StatusCode = 404;
-    Res.Status = "Not Found";
-    Res.Headers["Content-Type"] = "text/html";
-    Res.Headers["Content-Length"] = std::to_string(NotFoundBody.size());
-    Res.Headers["Connection"] = "close";
-    Res.Body = NotFoundBody;
+	
+	return Reset()
+		.Version("HTTP/1.1")
+		.StatusCode(404)
+		.Status("Not Found")
+		.HTML()
+		.Header("Connection", "close")
+		.Body(NotFoundBody);
+}
 
-    return *this;
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::OK()
+{
+	Reset();
+	Version("HTTP/1.1");
+    StatusCode(200);
+    Status("OK");
+	
+	return *this;
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::JSON()
+{
+    Header("Content-Type", "application/json");
+	return *this;
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::HTML()
+{
+    Header("Content-Type", "text/html");
+	return *this;
 }
