@@ -28,7 +28,7 @@ namespace HTTP
 
     struct Connection
     {
-        pollfd FileDesc{};
+        pollfd Socket{};
         std::string MessageBuffer = "";
     };
 
