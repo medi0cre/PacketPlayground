@@ -49,26 +49,30 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
 	Enforce(listen(ListenFD, MaxConnections) == 0, "Failed to listen for incoming connections");
     freeaddrinfo(InfoLinkedList);
     InfoLinkedList = nullptr;
-    
-    pollfd ListeningSocket{};
-    ListeningSocket.fd = ListenFD;
-    ListeningSocket.events = POLLIN;
-    
+
+    Connection ListeningSocket{};
+    ListeningSocket.FileDesc.fd = ListenFD;
+    ListeningSocket.FileDesc.events = POLLIN;
     ConnectionList.emplace_back(ListeningSocket);
 }
 
 void HTTP::Server::Run()
 {
     std::cout << "Launching server. Waiting for new connections...\n";
-    
+
     while (true) 
     {
+        std::vector<pollfd> PollFDList{};
+
+        for (int i = 0; i < ConnectionList.size(); i++)
+            PollFDList.emplace_back(ConnectionList[i].FileDesc);
+
         // Start polling with -1 timeout to poll forever
-        Enforce(WSAPoll(ConnectionList.data(), ConnectionList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
+        Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
 
         for (int ConnectionIndex = 0; ConnectionIndex < ConnectionList.size(); ConnectionIndex++) 
         {
-            if (ConnectionList[ConnectionIndex].revents & (POLLIN | POLLHUP)) 
+            if (PollFDList[ConnectionIndex].revents & (POLLIN | POLLHUP)) 
             {
                 if (ConnectionIndex == 0)
 					HandleNewConnection();
@@ -86,7 +90,7 @@ void HTTP::Server::HandleNewConnection()
 	int NewFD = -1;
 	char RemoteIP[INET6_ADDRSTRLEN] = "";
 
-	NewFD = accept(ConnectionList[0].fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
+	NewFD = accept(ConnectionList[0].FileDesc.fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
 	Enforce(NewFD != -1, "Invalid file descriptor obtained from accept() call");
 	
 	if (ConnectionList.size() >= MaxConnections)
@@ -94,10 +98,10 @@ void HTTP::Server::HandleNewConnection()
 	else
 	{
 		// Add the new socket to the poll
-        pollfd Client{};
-        Client.fd = NewFD;
-        Client.events = POLLIN;
-        Client.revents = 0;
+        Connection Client{};
+        Client.FileDesc.fd = NewFD;
+        Client.FileDesc.events = POLLIN;
+        Client.FileDesc.revents = 0;
         ConnectionList.emplace_back(Client);
 
 		// Find out the IP address string of the socket
@@ -131,8 +135,8 @@ void HTTP::Server::HandleNewConnection()
 void HTTP::Server::HandleClientData(int& Index)
 {
 	char Message[BufferSize];
-	int NumBytes = recv(ConnectionList[Index].fd, Message, BufferSize, 0);
-	int SenderFD = ConnectionList[Index].fd;
+	int NumBytes = recv(ConnectionList[Index].FileDesc.fd, Message, BufferSize, 0);
+	int SenderFD = ConnectionList[Index].FileDesc.fd;
 
 	if (NumBytes <= 0)
 	{
@@ -142,8 +146,7 @@ void HTTP::Server::HandleClientData(int& Index)
 		else
 			std::cerr << "Error receiving message from socket " << SenderFD << "\n";
 
-		Enforce(closesocket(ConnectionList[Index].fd) == 0, "Failed to close socket inside HandleClientData()");
-        
+		Enforce(closesocket(ConnectionList[Index].FileDesc.fd) == 0, "Failed to close socket inside HandleClientData()");
         ConnectionList.erase(ConnectionList.begin() + Index);
         Index--;
 
@@ -168,7 +171,7 @@ void HTTP::Server::HandleClientData(int& Index)
             .Build();
     }
     
-    SendResponse(ConnectionList[Index].fd, Res);
+    SendResponse(ConnectionList[Index].FileDesc.fd, Res);
 }
 
 HTTP::Request HTTP::Server::ParseRequest(const std::string& RawData)
@@ -244,7 +247,7 @@ void HTTP::Server::AddRoute(const std::string& Method, const std::string& Path, 
 
 HTTP::Server::~Server()
 {
-    Enforce(closesocket(ConnectionList[0].fd) == 0, "Failed to close the listening socket");
+    Enforce(closesocket(ConnectionList[0].FileDesc.fd) == 0, "Failed to close the listening socket");
     Enforce(WSACleanup() == 0, "Failed to clean up winsock API");
 }
 

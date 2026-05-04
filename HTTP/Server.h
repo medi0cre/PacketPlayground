@@ -26,6 +26,12 @@ namespace HTTP
         std::string Body = "";
     };
 
+    struct Connection
+    {
+        pollfd FileDesc{};
+        std::string MessageBuffer = "";
+    };
+
     class ResponseBuilder
     {
 	private:
@@ -56,7 +62,7 @@ namespace HTTP
         static constexpr int MaxConnections = 32;
         static constexpr int BufferSize = 32768;
 		
-        std::vector<pollfd> ConnectionList{};
+        std::vector<Connection> ConnectionList{};
 	    std::unordered_map<std::string, std::function<Response(const Request&)>> Routes{};
 
 	    void HandleNewConnection();
