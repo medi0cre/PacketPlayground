@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 #include <unordered_map>
 #include <functional>
 #include <winsock2.h>
@@ -24,7 +25,7 @@ namespace HTTP
         std::unordered_map<std::string, std::string> Headers{};
         std::string Body = "";
     };
-	
+
     class ResponseBuilder
     {
 	private:
@@ -52,19 +53,16 @@ namespace HTTP
     class Server
     {
     private:
-	    static constexpr int MaxConnections = 32;
-	    static constexpr int BufferSize = 32768;
-	    static constexpr int ReadBufferSize = 8192;
-
-	    int ConnectionCount = 0;
-        pollfd* ConnectionList = nullptr;
-        char* MessageBuffer = nullptr;
+        static constexpr int MaxConnections = 32;
+        static constexpr int BufferSize = 32768;
+		
+        std::vector<pollfd> ConnectionList{};
 	    std::unordered_map<std::string, std::function<Response(const Request&)>> Routes{};
-			
+
 	    void HandleNewConnection();
 	    void HandleClientData(int& Index);
 	    void SendResponse(int ClientFD, const Response& Res);
-        
+
         std::string CreateResponseString(const Response& Res);
 	    Request ParseRequest(const std::string& RawData);
 
