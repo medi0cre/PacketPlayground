@@ -50,7 +50,8 @@ namespace HTTP
 	    ResponseBuilder& Header(const std::string& Key, const std::string& Value);
 		
         ResponseBuilder& NotFound();
-		
+		ResponseBuilder& BadRequest();
+
 		ResponseBuilder& OK();
 		ResponseBuilder& JSON();
 		ResponseBuilder& HTML();
@@ -61,16 +62,14 @@ namespace HTTP
     private:
         static constexpr int MaxConnections = 32;
         static constexpr int BufferSize = 32768;
-		
+
         std::vector<Connection> ConnectionList{};
 	    std::unordered_map<std::string, std::function<Response(const Request&)>> Routes{};
 
 	    void HandleNewConnection();
 	    void HandleClientData(int& Index);
 	    void SendResponse(int ClientFD, const Response& Res);
-
-        std::string CreateResponseString(const Response& Res);
-	    Request ParseRequest(const std::string& RawData);
+        std::string CPPString(const Response& Res);
 
     public:
         Server(const char* IPAddress, const char* Port);

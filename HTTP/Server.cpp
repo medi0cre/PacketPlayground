@@ -63,9 +63,12 @@ void HTTP::Server::Run()
     while (true) 
     {
         std::vector<pollfd> PollFDList{};
+		PollFDList.reserve(ConnectionList.size());
 
         for (int i = 0; i < ConnectionList.size(); i++)
+		{
             PollFDList.emplace_back(ConnectionList[i].Socket);
+		}
 
         // Start polling with -1 timeout to poll forever
         Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
@@ -75,9 +78,13 @@ void HTTP::Server::Run()
             if (PollFDList[ConnectionIndex].revents & (POLLIN | POLLHUP)) 
             {
                 if (ConnectionIndex == 0)
+				{
 					HandleNewConnection();
+				}
                 else
+				{
 					HandleClientData(ConnectionIndex);
+				}
             }
         }
     }
@@ -94,7 +101,9 @@ void HTTP::Server::HandleNewConnection()
 	Enforce(NewFD != -1, "Invalid file descriptor obtained from accept() call");
 	
 	if (ConnectionList.size() >= MaxConnections)
+	{
 		std::cout << "No room in poll buffer to add new connection\n";
+	}
 	else
 	{
 		// Add the new socket to the poll
@@ -142,71 +151,87 @@ void HTTP::Server::HandleClientData(int& Index)
 	{
 		// Got error or connection closed by client
 		if (NumBytes == 0)
+		{
 			std::cerr << "Socket " << SenderFD << " closed the connection\n";
+		}
 		else
+		{
 			std::cerr << "Error receiving message from socket " << SenderFD << "\n";
+		}
 
+        // Remove the connection from the list
 		Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket inside HandleClientData()");
         ConnectionList.erase(ConnectionList.begin() + Index);
         Index--;
-
 		return;
 	}
-	
-	std::string RawData(Message, NumBytes);
-    Request Req = ParseRequest(RawData);
-    
-    std::string Key = Req.Method + ":" + Req.URI;
-    auto It = Routes.find(Key);
-    
-    Response Res{};
 
-    if (It != Routes.end())
-        Res = It->second(Req);
-    else
+    ResponseBuilder Builder{};
+
+    // Add the data to the connection buffer
+    std::string MessageString = std::string(Message, NumBytes);
+    ConnectionList[Index].MessageBuffer += MessageString;
+    Enforce(ConnectionList[Index].MessageBuffer.length() <= BufferSize, "Total size of message is bigger than 32 kibibytes, potential DDoS attack!");
+
+    // Split the headers and body
+    std::vector<std::string> HeadersAndBody = SplitByDelimiter(MessageString, "\r\n\r\n");
+    if (HeadersAndBody.size() != 2)
     {
-        ResponseBuilder Builder{};
-        Res = Builder
-            .NotFound()
-            .Build();
+        SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+        return;
     }
-    
-    SendResponse(ConnectionList[Index].Socket.fd, Res);
-}
 
-HTTP::Request HTTP::Server::ParseRequest(const std::string& RawData)
-{
-    Request Req{};
-
-    std::vector<std::string> Parts = SplitByDelimiter(RawData, "\r\n\r\n");
-    if (Parts.size() != 2) return Req;
-
-    std::vector<std::string> Lines = SplitByDelimiter(Parts[0], "\r\n");
-    if (Lines.empty()) return Req;
-
-    std::vector<std::string> RequestLine = SplitByDelimiter(Lines[0], " ");
-    if (RequestLine.size() != 3) return Req;
-    
-    Req.Method = RequestLine[0];
-    Req.URI = RequestLine[1];
-    Req.Version = RequestLine[2];
-    Req.Body = Parts[1];
-
-    for (int i = 1; i < Lines.size(); i++)
+    // Split the request line from the headers
+    std::vector<std::string> RequestAndHeaders = SplitByDelimiter(HeadersAndBody[0], "\r\n");
+    if (RequestAndHeaders.empty())
     {
-        int ColonPosition = Lines[i].find(':');
+        SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+        return;
+    }
+
+    // Get the data from the request line
+    std::vector<std::string> RequestLine = SplitByDelimiter(RequestAndHeaders[0], " ");
+    if (RequestLine.size() != 3)
+    {
+        SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+        return;
+    }
+
+    // Make the request struct, useless now but might become necessary as project scales
+    Request ClientRequest{};
+    ClientRequest.Method = RequestLine[0];
+    ClientRequest.URI = RequestLine[1];
+    ClientRequest.Version = RequestLine[2];
+    ClientRequest.Body = HeadersAndBody[1];
+
+    for (int i = 1; i < RequestAndHeaders.size(); i++)
+    {
+        int ColonPosition = RequestAndHeaders[i].find(':');
         if (ColonPosition != std::string::npos)
         {
-            std::string Key = Trim(Lines[i].substr(0, ColonPosition));
-            std::string Value = Trim(Lines[i].substr(ColonPosition + 1));
-            Req.Headers[Key] = Value;
+            std::string Key = Trim(RequestAndHeaders[i].substr(0, ColonPosition));
+            std::string Value = Trim(RequestAndHeaders[i].substr(ColonPosition + 1));
+            ClientRequest.Headers[Key] = Value;
         }
     }
-
-    return Req;
+    
+    // Try to find the requested route
+    std::string Key = ClientRequest.Method + ":" + ClientRequest.URI;
+    auto Iterator = Routes.find(Key);
+    
+    if (Iterator != Routes.end())
+    {
+        SendResponse(ConnectionList[Index].Socket.fd, Iterator->second(ClientRequest));
+        return;
+    }
+    else
+    {
+        SendResponse(ConnectionList[Index].Socket.fd, Builder.NotFound().Build());
+        return;
+    }
 }
 
-std::string HTTP::Server::CreateResponseString(const Response& Res)
+std::string HTTP::Server::CPPString(const Response& Res)
 {
     std::string Result = "";
     Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
@@ -220,7 +245,7 @@ std::string HTTP::Server::CreateResponseString(const Response& Res)
 
 void HTTP::Server::SendResponse(int ClientFD, const Response& Res)
 {
-    std::string ResponseString = CreateResponseString(Res);
+    std::string ResponseString = CPPString(Res);
     int TotalSent = 0;
     int Remaining = ResponseString.size();
     
@@ -311,6 +336,26 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::NotFound()
 		.HTML()
 		.Header("Connection", "close")
 		.Body(NotFoundBody);
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::BadRequest()
+{
+    const std::string BadRequestBody = "<html>"
+                                         "<head><title>400 Bad Request</title></head>"
+                                         "<body>"
+                                           "<h1>400 Bad Request</h1>"
+                                           "<p>Your browser sent a request that the server could not understand</p>"
+                                         "</body>"
+                                       "</html>";
+
+	
+	return Reset()
+		.Version("HTTP/1.1")
+		.StatusCode(400)
+		.Status("Bad Request")
+		.HTML()
+		.Header("Connection", "close")
+		.Body(BadRequestBody);
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::OK()
