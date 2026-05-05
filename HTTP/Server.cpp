@@ -73,7 +73,7 @@ void HTTP::Server::Run()
         // Start polling with -1 timeout to poll forever
         Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
 
-        for (int ConnectionIndex = 0; ConnectionIndex < ConnectionList.size(); ConnectionIndex++) 
+        for (int ConnectionIndex = ConnectionList.size() - 1; ConnectionIndex >= 0; ConnectionIndex--) 
         {
             if (PollFDList[ConnectionIndex].revents & (POLLIN | POLLHUP)) 
             {
@@ -141,7 +141,7 @@ void HTTP::Server::HandleNewConnection()
 	}
 }
 
-void HTTP::Server::HandleClientData(int& Index)
+void HTTP::Server::HandleClientData(int Index)
 {
 	char Message[BufferSize];
 	int NumBytes = recv(ConnectionList[Index].Socket.fd, Message, BufferSize, 0);
@@ -162,7 +162,6 @@ void HTTP::Server::HandleClientData(int& Index)
         // Remove the connection from the list
 		Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket inside HandleClientData()");
         ConnectionList.erase(ConnectionList.begin() + Index);
-        Index--;
 		return;
 	}
 

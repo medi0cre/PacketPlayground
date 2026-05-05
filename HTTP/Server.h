@@ -67,7 +67,7 @@ namespace HTTP
 	    std::unordered_map<std::string, std::function<Response(const Request&)>> Routes{};
 
 	    void HandleNewConnection();
-	    void HandleClientData(int& Index);
+	    void HandleClientData(int Index);
 	    void SendResponse(int ClientFD, const Response& Res);
         std::string CPPString(const Response& Res);
 
