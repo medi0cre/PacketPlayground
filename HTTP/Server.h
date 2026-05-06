@@ -29,6 +29,7 @@ namespace HTTP
     struct Connection
     {
 		bool BlankLineFound = false;
+        size_t BlankLinePosition = 0;
         pollfd Socket{};
         std::string MessageBuffer = "";
 		Request ClientRequest{};

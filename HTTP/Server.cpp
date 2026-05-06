@@ -186,7 +186,9 @@ void HTTP::Server::HandleClientData(int Index)
             return; // No blank line found, still getting header data
         }
 
+        // Store the position of the blank line for easier use
         ConnectionList[Index].BlankLineFound = true;
+        ConnectionList[Index].BlankLinePosition = BlankLinePosition;
 
         // Split the head and body using the blank line
         std::string Head = ConnectionList[Index].MessageBuffer.substr(0, BlankLinePosition);
@@ -264,9 +266,8 @@ void HTTP::Server::HandleClientData(int Index)
     }
 
 	// Body data fully received
-	size_t BlankLinePosition = ConnectionList[Index].MessageBuffer.find("\r\n\r\n");
-	Enforce(BlankLinePosition != std::string::npos, "Header/body separator disappeared unexpectedly");
-	ConnectionList[Index].ClientRequest.Body = ConnectionList[Index].MessageBuffer.substr(BlankLinePosition + 4);
+	Enforce(ConnectionList[Index].BlankLinePosition != 0, "Blank line should be found by now");
+	ConnectionList[Index].ClientRequest.Body = ConnectionList[Index].MessageBuffer.substr(ConnectionList[Index].BlankLinePosition + 4);
 
     // Try to find the requested route
     std::string Key = ConnectionList[Index].ClientRequest.Method + ":" + ConnectionList[Index].ClientRequest.URI;
