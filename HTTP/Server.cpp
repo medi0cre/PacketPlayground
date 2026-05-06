@@ -54,6 +54,7 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
     ListeningSocket.Socket.fd = ListenFD;
     ListeningSocket.Socket.events = POLLIN;
     ConnectionList.emplace_back(ListeningSocket);
+    Enforce(ConnectionList.size() == 1, "There should not be any other connections other than the listening socket");
 }
 
 void HTTP::Server::Run()
@@ -72,6 +73,7 @@ void HTTP::Server::Run()
 
         // Start polling with -1 timeout to poll forever
         Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
+        Enforce(PollFDList.size() == ConnectionList.size(), "Mapping wrong between PollFDList and ConnectionList");
 
         for (int ConnectionIndex = ConnectionList.size() - 1; ConnectionIndex >= 0; ConnectionIndex--) 
         {
@@ -103,6 +105,7 @@ void HTTP::Server::HandleNewConnection()
 	if (ConnectionList.size() >= MaxConnections)
 	{
 		std::cout << "No room in poll buffer to add new connection\n";
+        return;
 	}
 	else
 	{
@@ -143,6 +146,8 @@ void HTTP::Server::HandleNewConnection()
 
 void HTTP::Server::HandleClientData(int Index)
 {
+	Enforce(Index >= 0 && Index < ConnectionList.size(), "Invalid connection index");
+	
 	char Message[BufferSize];
 	int NumBytes = recv(ConnectionList[Index].Socket.fd, Message, BufferSize, 0);
 	int SenderFD = ConnectionList[Index].Socket.fd;
@@ -157,6 +162,7 @@ void HTTP::Server::HandleClientData(int Index)
 		else
 		{
 			std::cerr << "Error receiving message from socket " << SenderFD << "\n";
+            std::cerr << "Error Code: " << WSAGetLastError() << "\n";
 		}
 
         // Remove the connection from the list
@@ -168,64 +174,118 @@ void HTTP::Server::HandleClientData(int Index)
     ResponseBuilder Builder{};
 
     // Add the data to the connection buffer
-    std::string MessageString = std::string(Message, NumBytes);
-    ConnectionList[Index].MessageBuffer += MessageString;
+    ConnectionList[Index].MessageBuffer += std::string(Message, NumBytes);
     Enforce(ConnectionList[Index].MessageBuffer.length() <= BufferSize, "Total size of message is bigger than 32 kibibytes, potential DDoS attack!");
 
-    // Split the headers and body
-    std::vector<std::string> HeadersAndBody = SplitByDelimiter(MessageString, "\r\n\r\n");
-    if (HeadersAndBody.size() != 2)
+    if (!ConnectionList[Index].BlankLineFound)
     {
-        SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-        return;
-    }
-
-    // Split the request line from the headers
-    std::vector<std::string> RequestAndHeaders = SplitByDelimiter(HeadersAndBody[0], "\r\n");
-    if (RequestAndHeaders.empty())
-    {
-        SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-        return;
-    }
-
-    // Get the data from the request line
-    std::vector<std::string> RequestLine = SplitByDelimiter(RequestAndHeaders[0], " ");
-    if (RequestLine.size() != 3)
-    {
-        SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-        return;
-    }
-
-    // Make the request struct, useless now but might become necessary as project scales
-    Request ClientRequest{};
-    ClientRequest.Method = RequestLine[0];
-    ClientRequest.URI = RequestLine[1];
-    ClientRequest.Version = RequestLine[2];
-    ClientRequest.Body = HeadersAndBody[1];
-
-    for (int i = 1; i < RequestAndHeaders.size(); i++)
-    {
-        int ColonPosition = RequestAndHeaders[i].find(':');
-        if (ColonPosition != std::string::npos)
+        // Look for a blank line
+        size_t BlankLinePosition = ConnectionList[Index].MessageBuffer.find("\r\n\r\n");
+        if (BlankLinePosition == std::string::npos)
         {
-            std::string Key = Trim(RequestAndHeaders[i].substr(0, ColonPosition));
-            std::string Value = Trim(RequestAndHeaders[i].substr(ColonPosition + 1));
-            ClientRequest.Headers[Key] = Value;
+            return; // No blank line found, still getting header data
+        }
+
+        ConnectionList[Index].BlankLineFound = true;
+
+        // Split the head and body using the blank line
+        std::string Head = ConnectionList[Index].MessageBuffer.substr(0, BlankLinePosition);
+        std::string Body = ConnectionList[Index].MessageBuffer.substr(BlankLinePosition + 4);
+
+        // Split the request line from the headers
+        std::vector<std::string> RequestAndHeaders = SplitByDelimiter(Head, "\r\n");
+        if (RequestAndHeaders.empty())
+        {
+            SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build()); 
+            Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request");
+            std::cerr << "Removing socket " << std::to_string(ConnectionList[Index].Socket.fd) << " from the list\n";
+            ConnectionList.erase(ConnectionList.begin() + Index);
+            return;
+        }
+
+        // Get the data from the request line
+        std::vector<std::string> RequestLine = SplitByDelimiter(RequestAndHeaders[0], " ");
+        if (RequestLine.size() != 3)
+        {
+            SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+            Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request"); 
+            std::cerr << "Removing socket " << std::to_string(ConnectionList[Index].Socket.fd) << " from the list\n";
+            ConnectionList.erase(ConnectionList.begin() + Index);
+            return;
+        }
+
+        // Make the request struct, pretty useless now but might become necessary as project scales
+        ConnectionList[Index].ClientRequest.Method = RequestLine[0];
+        ConnectionList[Index].ClientRequest.URI = RequestLine[1];
+        ConnectionList[Index].ClientRequest.Version = RequestLine[2];
+
+        for (int i = 1; i < RequestAndHeaders.size(); i++)
+        {
+            int ColonPosition = RequestAndHeaders[i].find(':');
+            if (ColonPosition != std::string::npos)
+            {
+                std::string Key = Trim(RequestAndHeaders[i].substr(0, ColonPosition));
+                std::string Value = Trim(RequestAndHeaders[i].substr(ColonPosition + 1));
+                ConnectionList[Index].ClientRequest.Headers[Key] = Value;
+            }
         }
     }
     
-    // Try to find the requested route
-    std::string Key = ClientRequest.Method + ":" + ClientRequest.URI;
-    auto Iterator = Routes.find(Key);
-    
-    if (Iterator != Routes.end())
+    if (!ConnectionList[Index].BlankLineFound)
     {
-        SendResponse(ConnectionList[Index].Socket.fd, Iterator->second(ClientRequest));
+        return;
+    }
+
+    // Check the length of the body to see if all the data has arrived
+    int ContentLength = 0;
+    auto LengthIterator = ConnectionList[Index].ClientRequest.Headers.find("Content-Length");
+	
+    if (LengthIterator != ConnectionList[Index].ClientRequest.Headers.end())
+    {
+        try
+		{
+			ContentLength = std::stoi(LengthIterator->second);
+		}
+		catch (const std::exception& Exception)
+		{
+            std::cerr << "Invalid Content-Length: " << Exception.what() << "\n";
+
+			SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+			Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after finding route");	
+            std::cerr << "Removing socket " << std::to_string(ConnectionList[Index].Socket.fd) << " from the list\n";
+            ConnectionList.erase(ConnectionList.begin() + Index);
+			return;
+		}
+    } 
+
+    if (ContentLength > ConnectionList[Index].ClientRequest.Body.size())
+    {
+        return; // Still getting body data
+    }
+
+	// Body data fully received
+	size_t BlankLinePosition = ConnectionList[Index].MessageBuffer.find("\r\n\r\n");
+	Enforce(BlankLinePosition != std::string::npos, "Header/body separator disappeared unexpectedly");
+	ConnectionList[Index].ClientRequest.Body = ConnectionList[Index].MessageBuffer.substr(BlankLinePosition + 4);
+
+    // Try to find the requested route
+    std::string Key = ConnectionList[Index].ClientRequest.Method + ":" + ConnectionList[Index].ClientRequest.URI;
+    auto RouteIterator = Routes.find(Key);
+    
+    if (RouteIterator != Routes.end())
+    {
+        SendResponse(ConnectionList[Index].Socket.fd, RouteIterator->second(ConnectionList[Index].ClientRequest));
+        Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after finding route");
+        std::cerr << "Found the requested route, sending response\n";
+        ConnectionList.erase(ConnectionList.begin() + Index);
         return;
     }
     else
     {
         SendResponse(ConnectionList[Index].Socket.fd, Builder.NotFound().Build());
+        Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after finding route");
+        std::cerr << "Failed to find the requested resource, sending 404 error\n";
+        ConnectionList.erase(ConnectionList.begin() + Index);
         return;
     }
 }
@@ -275,8 +335,10 @@ HTTP::Server::~Server()
     Enforce(WSACleanup() == 0, "Failed to clean up winsock API");
 }
 
-HTTP::Response& HTTP::ResponseBuilder::Build()
+HTTP::Response HTTP::ResponseBuilder::Build()
 {
+    Res.Headers["Connection"] = "close";
+    Res.Headers["Server"] = "PacketPlayground";
 	Res.Headers["Content-Length"] = std::to_string(Res.Body.size());
     return Res;
 }
@@ -333,7 +395,6 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::NotFound()
 		.StatusCode(404)
 		.Status("Not Found")
 		.HTML()
-		.Header("Connection", "close")
 		.Body(NotFoundBody);
 }
 
@@ -353,7 +414,6 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::BadRequest()
 		.StatusCode(400)
 		.Status("Bad Request")
 		.HTML()
-		.Header("Connection", "close")
 		.Body(BadRequestBody);
 }
 

@@ -28,8 +28,11 @@ namespace HTTP
 
     struct Connection
     {
+		bool BlankLineFound = false;
         pollfd Socket{};
         std::string MessageBuffer = "";
+		Request ClientRequest{};
+		Response ClientResponse{};
     };
 
     class ResponseBuilder
@@ -41,7 +44,7 @@ namespace HTTP
 	    ResponseBuilder() = default;
 	    ~ResponseBuilder() = default;
 		
-        Response& Build();
+        Response Build();
 	    ResponseBuilder& Reset();
         ResponseBuilder& Version(const std::string& Version); 
 	    ResponseBuilder& StatusCode(int StatusCode);
