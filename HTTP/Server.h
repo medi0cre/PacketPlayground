@@ -30,7 +30,7 @@ namespace HTTP
     {
 		bool BlankLineFound = false;
         size_t BlankLinePosition = 0;
-        pollfd Socket{};
+        WSAPOLLFD Socket{};
         std::string MessageBuffer = "";
 		Request ClientRequest{};
 		Response ClientResponse{};
@@ -72,7 +72,7 @@ namespace HTTP
 
 	    void HandleNewConnection();
 	    void HandleClientData(int Index);
-	    void SendResponse(int ClientFD, const Response& Res);
+	    void SendResponse(SOCKET ClientFD, const Response& Res);
         std::string CPPString(const Response& Res);
 
     public:

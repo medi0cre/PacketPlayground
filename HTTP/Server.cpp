@@ -22,7 +22,7 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
 
     Enforce(getaddrinfo(IPAddress, Port, &Hints, &InfoLinkedList) == 0, "Failed to obtain address info");
 
-    int ListenFD = -1;
+    SOCKET ListenFD = 0;
     for (addrinfo* Info = InfoLinkedList; Info != nullptr; Info = Info->ai_next)
     {
         if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == SOCKET_ERROR)
@@ -45,7 +45,7 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
         break;
     }
 
-	Enforce(ListenFD != -1, "Failed to get valid listening socket");
+	Enforce(ListenFD != 0, "Failed to get valid listening socket");
 	Enforce(listen(ListenFD, MaxConnections) == 0, "Failed to listen for incoming connections");
     freeaddrinfo(InfoLinkedList);
     InfoLinkedList = nullptr;
@@ -63,7 +63,7 @@ void HTTP::Server::Run()
 
     while (true) 
     {
-        std::vector<pollfd> PollFDList{};
+        std::vector<WSAPOLLFD> PollFDList{};
 		PollFDList.reserve(ConnectionList.size());
 
         for (int i = 0; i < ConnectionList.size(); i++)
@@ -96,15 +96,16 @@ void HTTP::Server::HandleNewConnection()
 {
 	sockaddr_storage RemoteAddr{};
 	socklen_t AddrLen = sizeof(RemoteAddr);
-	int NewFD = -1;
+	SOCKET NewFD = 0;
 	char RemoteIP[INET6_ADDRSTRLEN] = "";
 
 	NewFD = accept(ConnectionList[0].Socket.fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
-	Enforce(NewFD != -1, "Invalid file descriptor obtained from accept() call");
+	Enforce(NewFD != 0, "Invalid file descriptor obtained from accept() call");
 	
 	if (ConnectionList.size() >= MaxConnections)
 	{
 		std::cout << "No room in poll buffer to add new connection\n";
+        Enforce(closesocket(NewFD) == 0, "Failed to close socket after reaching max capacity");
         return;
 	}
 	else
@@ -150,7 +151,7 @@ void HTTP::Server::HandleClientData(int Index)
 	
 	char Message[BufferSize];
 	int NumBytes = recv(ConnectionList[Index].Socket.fd, Message, BufferSize, 0);
-	int SenderFD = ConnectionList[Index].Socket.fd;
+	SOCKET SenderFD = ConnectionList[Index].Socket.fd;
 
 	if (NumBytes <= 0)
 	{
@@ -223,7 +224,7 @@ void HTTP::Server::HandleClientData(int Index)
 
         for (int i = 1; i < RequestAndHeaders.size(); i++)
         {
-            int ColonPosition = RequestAndHeaders[i].find(':');
+            size_t ColonPosition = RequestAndHeaders[i].find(':');
             if (ColonPosition != std::string::npos)
             {
                 std::string Key = Trim(RequestAndHeaders[i].substr(0, ColonPosition));
@@ -239,7 +240,7 @@ void HTTP::Server::HandleClientData(int Index)
     }
 
     // Check the length of the body to see if all the data has arrived
-    int ContentLength = 0;
+    size_t ContentLength = 0;
     auto LengthIterator = ConnectionList[Index].ClientRequest.Headers.find("Content-Length");
 	
     if (LengthIterator != ConnectionList[Index].ClientRequest.Headers.end())
@@ -297,17 +298,19 @@ std::string HTTP::Server::CPPString(const Response& Res)
     Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
     
     for (const auto& Header: Res.Headers)
+    {
         Result += Header.first + ": " + Header.second + "\r\n";
+    }
 
     Result += "\r\n" + Res.Body;
     return Result;
 }
 
-void HTTP::Server::SendResponse(int ClientFD, const Response& Res)
+void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 {
     std::string ResponseString = CPPString(Res);
-    int TotalSent = 0;
-    int Remaining = ResponseString.size();
+    size_t TotalSent = 0;
+    size_t Remaining = ResponseString.size();
     
     while (Remaining > 0)
     {
@@ -323,10 +326,10 @@ void HTTP::Server::SendResponse(int ClientFD, const Response& Res)
     }
 }
 
-void HTTP::Server::AddRoute(const std::string& Method, const std::string& Path, std::function<Response(const Request&)> Handler)
+void HTTP::Server::AddRoute(const std::string& Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
 {
     std::string Key = Method + ":" + Path;
-    Routes[Key] = Handler;
+    Routes[Key] = Dispatcher;
     std::cout << "Added route: " << Method << " " << Path << "\n";
 }
 
