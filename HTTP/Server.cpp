@@ -5,7 +5,7 @@
 
 HTTP::Server::Server(const char* IPAddress, const char* Port)
 {
-	// Load winsock API version 2.2
+    // Load winsock API version 2.2
     WSADATA Data{};
     Enforce(WSAStartup(MAKEWORD(2, 2), &Data) == 0, "Failed to load WinSock");
     Enforce(LOBYTE(Data.wVersion) == 2 && HIBYTE(Data.wVersion) == 2 , "Version 2.2 of Winsock not available.");
@@ -14,18 +14,18 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
     addrinfo Hints{};
     addrinfo* InfoLinkedList = nullptr;
 
-	// TCP sockets because UDP is for people who enjoy 
-	// shooting themselves in the foot with military precision!
+    // TCP sockets because UDP is for people who enjoy 
+    // shooting themselves in the foot with military precision!
     Hints.ai_family = AF_UNSPEC;
     Hints.ai_socktype = SOCK_STREAM;
     Hints.ai_flags = AI_PASSIVE; 
 
     Enforce(getaddrinfo(IPAddress, Port, &Hints, &InfoLinkedList) == 0, "Failed to obtain address info");
 
-    int ListenFD = -1;
+    SOCKET ListenFD = INVALID_SOCKET;
     for (addrinfo* Info = InfoLinkedList; Info != nullptr; Info = Info->ai_next)
     {
-        if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == SOCKET_ERROR)
+        if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == INVALID_SOCKET)
         {
             std::cerr << "Invalid socket, trying the next one...\n";
             continue;
@@ -45,36 +45,48 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
         break;
     }
 
-	Enforce(ListenFD != -1, "Failed to get valid listening socket");
-	Enforce(listen(ListenFD, MaxConnections) == 0, "Failed to listen for incoming connections");
-	freeaddrinfo(InfoLinkedList);
-	InfoLinkedList = nullptr;
-	
-    ConnectionList = new pollfd[MaxConnections]();
-	ConnectionList[0].fd = ListenFD;
-	ConnectionList[0].events = POLLIN;
-	ConnectionCount++;
+    Enforce(ListenFD != INVALID_SOCKET, "Failed to get valid listening socket");
+    Enforce(listen(ListenFD, MaxConnections) == 0, "Failed to listen for incoming connections");
+    freeaddrinfo(InfoLinkedList);
+    InfoLinkedList = nullptr;
 
-    MessageBuffer = new char[BufferSize * MaxConnections]();
+    Connection ListeningSocket{};
+    ListeningSocket.Socket.fd = ListenFD;
+    ListeningSocket.Socket.events = POLLIN;
+    ConnectionList.emplace_back(ListeningSocket);
+    Enforce(ConnectionList.size() == 1, "There should not be any other connections other than the listening socket");
 }
 
 void HTTP::Server::Run()
 {
     std::cout << "Launching server. Waiting for new connections...\n";
-	
-	while (true) 
-    {
-        // Start polling with -1 timeout to poll forever
-        Enforce(WSAPoll(ConnectionList, ConnectionCount, -1) != SOCKET_ERROR, "Error occured during polling");
 
-        for (int ConnectionIndex = 0; ConnectionIndex < ConnectionCount; ConnectionIndex++) 
+    while (true) 
+    {
+        std::vector<WSAPOLLFD> PollFDList{};
+        PollFDList.reserve(ConnectionList.size());
+
+        for (int i = 0; i < ConnectionList.size(); i++)
         {
-            if (ConnectionList[ConnectionIndex].revents & (POLLIN | POLLHUP)) 
+            PollFDList.emplace_back(ConnectionList[i].Socket);
+		}
+
+		// Start polling with -1 timeout to poll forever
+        Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
+        Enforce(PollFDList.size() == ConnectionList.size(), "Mapping wrong between PollFDList and ConnectionList");
+
+        for (int ConnectionIndex = ConnectionList.size() - 1; ConnectionIndex >= 0; ConnectionIndex--) 
+        {
+            if (PollFDList[ConnectionIndex].revents & (POLLIN | POLLHUP)) 
             {
                 if (ConnectionIndex == 0)
+				{
 					HandleNewConnection();
+				}
                 else
+				{
 					HandleClientData(ConnectionIndex);
+				}
             }
         }
     }
@@ -82,23 +94,29 @@ void HTTP::Server::Run()
 
 void HTTP::Server::HandleNewConnection()
 {
-	sockaddr_storage RemoteAddr{};
-	socklen_t AddrLen = sizeof(RemoteAddr);
-	int NewFD = -1;
-	char RemoteIP[INET6_ADDRSTRLEN] = "";
+    sockaddr_storage RemoteAddr{};
+    socklen_t AddrLen = sizeof(RemoteAddr);
+    SOCKET NewFD = INVALID_SOCKET;
+    char RemoteIP[INET6_ADDRSTRLEN] = "";
 
-	NewFD = accept(ConnectionList[0].fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
-	Enforce(NewFD != -1, "Invalid file descriptor obtained from accept() call");
+    NewFD = accept(ConnectionList[0].Socket.fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
+    Enforce(NewFD != INVALID_SOCKET, "Invalid file descriptor obtained from accept() call");
 	
-	if (ConnectionCount >= MaxConnections)
+    if (ConnectionList.size() >= MaxConnections)
+    {
 		std::cout << "No room in poll buffer to add new connection\n";
-	else
-	{
+        Enforce(closesocket(NewFD) == 0, "Failed to close socket after reaching max capacity");
+        return;
+    }
+    else
+    {
 		// Add the new socket to the poll
-		ConnectionList[ConnectionCount].fd = NewFD;
-		ConnectionList[ConnectionCount].events = POLLIN;
-		ConnectionList[ConnectionCount].revents = 0;
-		ConnectionCount++;
+        Connection Client{};
+        Client.Socket.fd = NewFD;
+        Client.Socket.events = POLLIN;
+        Client.Socket.revents = 0;
+        Client.State = AcceptingHeaders;
+        ConnectionList.emplace_back(Client);
 
 		// Find out the IP address string of the socket
 		sockaddr_in* SA4 = nullptr;
@@ -108,15 +126,19 @@ void HTTP::Server::HandleNewConnection()
 		switch (RemoteAddr.ss_family) 
 		{
 		case AF_INET:
-			SA4 = reinterpret_cast<sockaddr_in*>(&RemoteAddr);
+        {
+            SA4 = reinterpret_cast<sockaddr_in*>(&RemoteAddr);
 			Src = &(SA4->sin_addr);
 			break;
+        }
 		case AF_INET6:
+        {
 			SA6 = reinterpret_cast<sockaddr_in6*>(&RemoteAddr);
 			Src = &(SA6->sin6_addr);
 			break;
+        }
 		default:
-			std::cerr << "Failed to detect either IPV4 or IPV6\n";
+			Enforce(false, "Failed to detect either IPV4 or IPV6");
 			break;
 		}
 
@@ -125,116 +147,234 @@ void HTTP::Server::HandleNewConnection()
 
 		std::cout << "New connection from " << RemoteIP;
 		std::cout << " on socket " << NewFD << "\n";
-	}
+    }
 }
 
-void HTTP::Server::HandleClientData(int& Index)
+void HTTP::Server::HandleClientData(int Index)
 {
-	char* Message = MessageBuffer + BufferSize * Index;
-	int NumBytes = recv(ConnectionList[Index].fd, Message, BufferSize, 0);
-	int SenderFD = ConnectionList[Index].fd;
+    Enforce(Index >= 0 && Index < ConnectionList.size(), "Invalid connection index");
 
-	if (NumBytes <= 0)
+    char Data[BufferSize]{};
+    int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, BufferSize, 0);
+    SOCKET SenderFD = ConnectionList[Index].Socket.fd;
+    Enforce(SenderFD != INVALID_SOCKET, "Socket is invalid and cannot be used");
+	    
+    if (NumBytes <= 0)
 	{
 		// Got error or connection closed by client
 		if (NumBytes == 0)
+		{
 			std::cerr << "Socket " << SenderFD << " closed the connection\n";
+		}
 		else
+		{
 			std::cerr << "Error receiving message from socket " << SenderFD << "\n";
-
-		Enforce(closesocket(ConnectionList[Index].fd) == 0, "Failed to close socket inside HandleClientData()");
-
-        ConnectionList[Index] = ConnectionList[ConnectionCount - 1];
-        ConnectionCount--;
-        Index--;
-
-		return;
-	}
+            std::cerr << "Error Code: " << WSAGetLastError() << "\n";
+		}
+		
+        Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket inside HandleClientData()");
+        ConnectionList.erase(ConnectionList.begin() + Index);
+        return;
+    }
 	
-	std::string RawData(Message, NumBytes);
-    Request Req = ParseRequest(RawData);
-    
-    std::string Key = Req.Method + ":" + Req.URI;
-    auto It = Routes.find(Key);
-    
-    Response Res{};
+	ConnectionList[Index].Buffer += std::string(Data, NumBytes);
 
-    if (It != Routes.end())
-        Res = It->second(Req);
-    else
+    // Check for suspicious connections
+    if (ConnectionList[Index].Buffer.length() > BufferSize || ConnectionList[Index].ClientRequest.Body.length() > BufferSize)
     {
-        std::string NotFoundBody = "<html>"
-                                     "<head><title>404 Not Found</title></head>"
-                                     "<body>"
-                                       "<h1>Not Found</h1>"
-                                       "<p>The requested resource was not found on this server.</p>"
-                                     "</body>"
-                                   "</html>";
-
-        ResponseBuilder Builder{};
-        Res = Builder
-            .Version("HTTP/1.1")
-            .StatusCode(404)
-            .Status("Not Found")
-            .Header("Content-Type", "text/html")
-            .Header("Content-Length", std::to_string(NotFoundBody.size()))
-            .Header("Connection", "close")
-            .Body(NotFoundBody)
-            .Build();
-    }
-    
-    SendResponse(ConnectionList[Index].fd, Res);
-}
-
-HTTP::Request HTTP::Server::ParseRequest(const std::string& RawData)
-{
-    Request Req{};
-
-    std::vector<std::string> Parts = SplitByDelimiter(RawData, "\r\n\r\n");
-    if (Parts.size() != 2) return Req;
-
-    std::vector<std::string> Lines = SplitByDelimiter(Parts[0], "\r\n");
-    if (Lines.empty()) return Req;
-
-    std::vector<std::string> RequestLine = SplitByDelimiter(Lines[0], " ");
-    if (RequestLine.size() != 3) return Req;
-    
-    Req.Method = RequestLine[0];
-    Req.URI = RequestLine[1];
-    Req.Version = RequestLine[2];
-    Req.Body = Parts[1];
-
-    for (int i = 1; i < Lines.size(); i++)
-    {
-        int ColonPosition = Lines[i].find(':');
-        if (ColonPosition != std::string::npos)
-        {
-            std::string Key = Trim(Lines[i].substr(0, ColonPosition));
-            std::string Value = Trim(Lines[i].substr(ColonPosition + 1));
-            Req.Headers[Key] = Value;
-        }
+        std::cerr << "Total message size exceeded 32 kibibytes, potential DDoS attack\n";
+        std::cerr << "Removing malicious socket " << std::to_string(ConnectionList[Index].Socket.fd) << " from the list\n";
+        Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after potential DDoS attack");
+        ConnectionList.erase(ConnectionList.begin() + Index);
+        return;
     }
 
-    return Req;
+    // Parsing state machine
+	while (true)
+	{
+		switch (ConnectionList[Index].State)
+		{
+		case AcceptingHeaders:
+		{
+			// Look for a blank line
+			size_t BlankLinePosition = ConnectionList[Index].Buffer.find("\r\n\r\n");
+			if (BlankLinePosition == std::string::npos)
+			{
+				return; // No blank line found, still getting header data
+			}
+
+			// Store and remove head from the buffer
+			std::string Head = ConnectionList[Index].Buffer.substr(0, BlankLinePosition);
+			ConnectionList[Index].Buffer.erase(0, BlankLinePosition + 4);
+
+			// Organize the data before moving on to body
+			std::vector<std::string> RequestAndHeaders = SplitByDelimiter(Head, "\r\n");
+			if (RequestAndHeaders.empty())
+			{
+				ConnectionList[Index].State = Faulty;
+				break;
+			}
+			
+			std::vector<std::string> RequestLine = SplitByDelimiter(RequestAndHeaders[0], " ");
+			if (RequestLine.size() != 3)
+			{
+				ConnectionList[Index].State = Faulty;
+				break;
+			}
+
+			ConnectionList[Index].ClientRequest.Method = RequestLine[0];
+			ConnectionList[Index].ClientRequest.URI = RequestLine[1];
+			ConnectionList[Index].ClientRequest.Version = RequestLine[2];
+
+			for (int i = 1; i < RequestAndHeaders.size(); i++)
+			{
+				size_t ColonPosition = RequestAndHeaders[i].find(':');
+				if (ColonPosition != std::string::npos)
+				{
+					std::string Key = Trim(RequestAndHeaders[i].substr(0, ColonPosition));
+					std::string Value = Trim(RequestAndHeaders[i].substr(ColonPosition + 1));
+					ConnectionList[Index].ClientRequest.Headers[Key] = Value;
+				}
+			}
+
+			// Try to find the "Content-Length" header if possible before moving onto the next state
+			long long ContentLength = 0;
+			auto LengthIterator = ConnectionList[Index].ClientRequest.Headers.find("Content-Length");
+		
+			if (LengthIterator != ConnectionList[Index].ClientRequest.Headers.end())
+			{
+				// Content-Length header found
+				try
+				{
+					ContentLength = std::stoll(LengthIterator->second);
+					if (ContentLength < 0)
+					{
+						ConnectionList[Index].State = Faulty;
+						break;
+					}
+
+					ConnectionList[Index].BodyLength = ContentLength;
+				}
+				catch (const std::exception& Exception)
+				{
+					std::cerr << "Invalid Content-Length: " << Exception.what() << "\n";
+					ConnectionList[Index].State = Faulty;
+					break;
+				}
+
+				ConnectionList[Index].State = AcceptingBody;
+			} 
+			else
+			{
+				// GET request or header not found
+				ConnectionList[Index].State = ProcessingRequest;
+			}
+	 
+			break;
+		}
+		case AcceptingBody:    
+		{
+			if (ConnectionList[Index].BodyLength == 0)
+			{
+				ConnectionList[Index].State = ProcessingRequest;
+				break;
+			}
+
+			if (ConnectionList[Index].BodyLength > ConnectionList[Index].Buffer.length())
+			{
+				return; // Still getting body data
+			}
+
+			// Body data fully received
+			ConnectionList[Index].ClientRequest.Body = ConnectionList[Index].Buffer.substr(0, ConnectionList[Index].BodyLength);
+			ConnectionList[Index].Buffer = "";
+			ConnectionList[Index].State = ProcessingRequest;
+
+			break;
+		}
+		case ProcessingRequest:
+		{
+			ResponseBuilder Builder{};
+			std::string Method = ConnectionList[Index].ClientRequest.Method;
+			std::string Version = ConnectionList[Index].ClientRequest.Version;
+
+			if (Method != "GET" 
+				&& Method != "PUT" 
+				&& Method != "POST" 
+				&& Method != "PATCH" 
+				&& Method != "DELETE")
+			{
+				SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+				Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request");	
+				ConnectionList.erase(ConnectionList.begin() + Index);
+				return;
+			}
+			
+			if (Version != "HTTP/1.1" && Version != "HTTP/1.0")
+			{
+				SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+				Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request");	
+				ConnectionList.erase(ConnectionList.begin() + Index);
+				return;
+			}
+
+			// Try to find the requested route
+			std::string Key = ConnectionList[Index].ClientRequest.Method + ":" + ConnectionList[Index].ClientRequest.URI;
+			auto RouteIterator = Routes.find(Key);
+		
+			if (RouteIterator != Routes.end())
+			{
+				SendResponse(ConnectionList[Index].Socket.fd, RouteIterator->second(ConnectionList[Index].ClientRequest));
+				Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after finding route");
+				std::cerr << "Found the requested route, sending response\n";
+				ConnectionList.erase(ConnectionList.begin() + Index);
+				return;
+			}
+			else
+			{
+				SendResponse(ConnectionList[Index].Socket.fd, Builder.NotFound().Build());
+				Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after not finding route");
+				std::cerr << "Failed to find the requested resource, sending 404 error\n";
+				ConnectionList.erase(ConnectionList.begin() + Index);
+				return;
+			}
+
+			break;
+		}
+		case Faulty:
+		{
+			// Remove the connection from the list
+			Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket inside HandleClientData()");
+			std::cerr << "Faulty connection at socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
+			ConnectionList.erase(ConnectionList.begin() + Index);
+			return;
+		}
+		default:
+			Enforce(false, "Parsing state should never be null unless there is a bug");
+			return;
+		}
+	}
 }
 
-std::string HTTP::Server::CreateResponseString(const Response& Res)
+std::string HTTP::Server::CPPString(const Response& Res)
 {
     std::string Result = "";
     Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
     
     for (const auto& Header: Res.Headers)
+    {
         Result += Header.first + ": " + Header.second + "\r\n";
+    }
 
     Result += "\r\n" + Res.Body;
     return Result;
 }
 
-void HTTP::Server::SendResponse(int ClientFD, const Response& Res)
+void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 {
-    std::string ResponseString = CreateResponseString(Res);
-    int TotalSent = 0;
-    int Remaining = ResponseString.size();
+    std::string ResponseString = CPPString(Res);
+    size_t TotalSent = 0;
+    size_t Remaining = ResponseString.size();
     
     while (Remaining > 0)
     {
@@ -250,29 +390,29 @@ void HTTP::Server::SendResponse(int ClientFD, const Response& Res)
     }
 }
 
-void HTTP::Server::AddRoute(const std::string& Method, const std::string& Path, std::function<Response(const Request&)> Handler)
+void HTTP::Server::AddRoute(const std::string& Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
 {
     std::string Key = Method + ":" + Path;
-    Routes[Key] = Handler;
+    Routes[Key] = Dispatcher;
     std::cout << "Added route: " << Method << " " << Path << "\n";
 }
 
 HTTP::Server::~Server()
 {
-    Enforce(closesocket(ConnectionList[0].fd) == 0, "Failed to close the listening socket");
+	for (int i = 0; i < ConnectionList.size(); i++)
+	{
+		Enforce(closesocket(ConnectionList[0].Socket.fd) == 0, "Failed to close the listening socket");
+	}
 
-    if (ConnectionList != nullptr)
-        delete[] ConnectionList;
-
-    if (MessageBuffer != nullptr)
-        delete[] MessageBuffer;
-	
-    WSACleanup();
+    Enforce(WSACleanup() == 0, "Failed to clean up winsock API");
 }
 
-HTTP::Response& HTTP::ResponseBuilder::Build()
+HTTP::Response HTTP::ResponseBuilder::Build()
 {
-	return Res;
+    Res.Headers["Connection"] = "close";
+    Res.Headers["Server"] = "PacketPlayground";
+	Res.Headers["Content-Length"] = std::to_string(Res.Body.size());
+    return Res;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::Reset()
@@ -308,5 +448,65 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::Body(const std::string& Body)
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::Header(const std::string& Key, const std::string& Value)
 {
 	Res.Headers[Key] = Value;
+	return *this;
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::NotFound()
+{
+    const std::string NotFoundBody = "<html>"
+                                       "<head><title>404 Not Found</title></head>"
+                                       "<body>"
+                                         "<h1>Not Found</h1>"
+                                         "<p>The requested resource was not found on this server.</p>"
+                                       "</body>"
+                                     "</html>";
+
+	
+	return Reset()
+		.Version("HTTP/1.1")
+		.StatusCode(404)
+		.Status("Not Found")
+		.HTML()
+		.Body(NotFoundBody);
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::BadRequest()
+{
+    const std::string BadRequestBody = "<html>"
+                                         "<head><title>400 Bad Request</title></head>"
+                                         "<body>"
+                                           "<h1>400 Bad Request</h1>"
+                                           "<p>Your browser sent a request that the server could not understand</p>"
+                                         "</body>"
+                                       "</html>";
+
+	
+	return Reset()
+		.Version("HTTP/1.1")
+		.StatusCode(400)
+		.Status("Bad Request")
+		.HTML()
+		.Body(BadRequestBody);
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::OK()
+{
+	Reset();
+	Version("HTTP/1.1");
+    StatusCode(200);
+    Status("OK");
+	
+	return *this;
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::JSON()
+{
+    Header("Content-Type", "application/json");
+	return *this;
+}
+
+HTTP::ResponseBuilder& HTTP::ResponseBuilder::HTML()
+{
+    Header("Content-Type", "text/html");
 	return *this;
 }

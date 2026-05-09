@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 #include <unordered_map>
 #include <functional>
 #include <winsock2.h>
@@ -7,6 +8,15 @@
 
 namespace HTTP
 {
+    enum ParseState
+    {
+        Null,
+        AcceptingHeaders,
+        AcceptingBody,
+        ProcessingRequest,
+        Faulty
+    };
+    
     struct Request
     {
         std::string Method = "";
@@ -24,7 +34,16 @@ namespace HTTP
         std::unordered_map<std::string, std::string> Headers{};
         std::string Body = "";
     };
-	
+
+    struct Connection
+    {
+        size_t BodyLength = 0;
+        std::string Buffer = "";
+		ParseState State = Null;
+        WSAPOLLFD Socket{};
+		Request ClientRequest{};
+    };
+
     class ResponseBuilder
     {
 	private:
@@ -34,33 +53,35 @@ namespace HTTP
 	    ResponseBuilder() = default;
 	    ~ResponseBuilder() = default;
 		
-        Response& Build();
+        Response Build();
 	    ResponseBuilder& Reset();
         ResponseBuilder& Version(const std::string& Version); 
 	    ResponseBuilder& StatusCode(int StatusCode);
 	    ResponseBuilder& Status(const std::string& Status);
 	    ResponseBuilder& Body(const std::string& Body);
 	    ResponseBuilder& Header(const std::string& Key, const std::string& Value);
+		
+        ResponseBuilder& NotFound();
+		ResponseBuilder& BadRequest();
+
+		ResponseBuilder& OK();
+		ResponseBuilder& JSON();
+		ResponseBuilder& HTML();
     };
 
     class Server
     {
     private:
-	    static constexpr int MaxConnections = 32;
-	    static constexpr int BufferSize = 32768;
-	    static constexpr int ReadBufferSize = 8192;
+        static constexpr int MaxConnections = 32;
+        static constexpr int BufferSize = 32768;
 
-	    int ConnectionCount = 0;
-        pollfd* ConnectionList = nullptr;
-        char* MessageBuffer = nullptr;
+        std::vector<Connection> ConnectionList{};
 	    std::unordered_map<std::string, std::function<Response(const Request&)>> Routes{};
-			
+
 	    void HandleNewConnection();
-	    void HandleClientData(int& Index);
-	    void SendResponse(int ClientFD, const Response& Res);
-        
-        std::string CreateResponseString(const Response& Res);
-	    Request ParseRequest(const std::string& RawData);
+	    void HandleClientData(int Index);
+	    void SendResponse(SOCKET ClientFD, const Response& Res);
+        std::string CPPString(const Response& Res);
 
     public:
         Server(const char* IPAddress, const char* Port);
