@@ -22,7 +22,7 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
 
     Enforce(getaddrinfo(IPAddress, Port, &Hints, &InfoLinkedList) == 0, "Failed to obtain address info");
 
-    SOCKET ListenFD = 0;
+    SOCKET ListenFD = INVALID_SOCKET;
     for (addrinfo* Info = InfoLinkedList; Info != nullptr; Info = Info->ai_next)
     {
         if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == SOCKET_ERROR)
@@ -45,7 +45,7 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
         break;
     }
 
-	Enforce(ListenFD != 0, "Failed to get valid listening socket");
+	Enforce(ListenFD != INVALID_SOCKET, "Failed to get valid listening socket");
 	Enforce(listen(ListenFD, MaxConnections) == 0, "Failed to listen for incoming connections");
     freeaddrinfo(InfoLinkedList);
     InfoLinkedList = nullptr;
@@ -96,11 +96,11 @@ void HTTP::Server::HandleNewConnection()
 {
 	sockaddr_storage RemoteAddr{};
 	socklen_t AddrLen = sizeof(RemoteAddr);
-	SOCKET NewFD = 0;
+	SOCKET NewFD = INVALID_SOCKET;
 	char RemoteIP[INET6_ADDRSTRLEN] = "";
 
 	NewFD = accept(ConnectionList[0].Socket.fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
-	Enforce(NewFD != 0, "Invalid file descriptor obtained from accept() call");
+	Enforce(NewFD != INVALID_SOCKET, "Invalid file descriptor obtained from accept() call");
 	
 	if (ConnectionList.size() >= MaxConnections)
 	{
@@ -115,6 +115,7 @@ void HTTP::Server::HandleNewConnection()
         Client.Socket.fd = NewFD;
         Client.Socket.events = POLLIN;
         Client.Socket.revents = 0;
+        Client.State = AcceptingHeaders;
         ConnectionList.emplace_back(Client);
 
 		// Find out the IP address string of the socket
@@ -125,15 +126,19 @@ void HTTP::Server::HandleNewConnection()
 		switch (RemoteAddr.ss_family) 
 		{
 		case AF_INET:
-			SA4 = reinterpret_cast<sockaddr_in*>(&RemoteAddr);
+        {
+            SA4 = reinterpret_cast<sockaddr_in*>(&RemoteAddr);
 			Src = &(SA4->sin_addr);
 			break;
+        }
 		case AF_INET6:
+        {
 			SA6 = reinterpret_cast<sockaddr_in6*>(&RemoteAddr);
 			Src = &(SA6->sin6_addr);
 			break;
+        }
 		default:
-			std::cerr << "Failed to detect either IPV4 or IPV6\n";
+			Enforce(false, "Failed to detect either IPV4 or IPV6");
 			break;
 		}
 
@@ -148,12 +153,13 @@ void HTTP::Server::HandleNewConnection()
 void HTTP::Server::HandleClientData(int Index)
 {
 	Enforce(Index >= 0 && Index < ConnectionList.size(), "Invalid connection index");
-	
-	char Message[BufferSize];
-	int NumBytes = recv(ConnectionList[Index].Socket.fd, Message, BufferSize, 0);
-	SOCKET SenderFD = ConnectionList[Index].Socket.fd;
 
-	if (NumBytes <= 0)
+	char Data[BufferSize]{};
+	int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, BufferSize, 0);
+	SOCKET SenderFD = ConnectionList[Index].Socket.fd;
+    Enforce(SenderFD != INVALID_SOCKET, "Socket is invalid and cannot be used");
+	std::cout << "Socket " << SenderFD << " buffer: \n" << ConnectionList[Index].Buffer << "\n";    
+    if (NumBytes <= 0)
 	{
 		// Got error or connection closed by client
 		if (NumBytes == 0)
@@ -165,59 +171,55 @@ void HTTP::Server::HandleClientData(int Index)
 			std::cerr << "Error receiving message from socket " << SenderFD << "\n";
             std::cerr << "Error Code: " << WSAGetLastError() << "\n";
 		}
-
-        // Remove the connection from the list
-		Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket inside HandleClientData()");
+		
+        Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket inside HandleClientData()");
         ConnectionList.erase(ConnectionList.begin() + Index);
-		return;
-	}
+        return;
+    }
+	
+	ConnectionList[Index].Buffer += std::string(Data, NumBytes);
 
-    ResponseBuilder Builder{};
+    // Check for suspicious connections
+    if (ConnectionList[Index].Buffer.length() > BufferSize || ConnectionList[Index].ClientRequest.Body.length() > BufferSize)
+    {
+        std::cerr << "Total message size exceeded 32 kibibytes, potential DDoS attack\n";
+        std::cerr << "Removing malicious socket " << std::to_string(ConnectionList[Index].Socket.fd) << " from the list\n";
+        Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after potential DDoS attack");
+        ConnectionList.erase(ConnectionList.begin() + Index);
+        return;
+    }
 
-    // Add the data to the connection buffer
-    ConnectionList[Index].MessageBuffer += std::string(Message, NumBytes);
-    Enforce(ConnectionList[Index].MessageBuffer.length() <= BufferSize, "Total size of message is bigger than 32 kibibytes, potential DDoS attack!");
-
-    if (!ConnectionList[Index].BlankLineFound)
+    // Parsing state machine
+    switch (ConnectionList[Index].State)
+    {
+    case AcceptingHeaders:
     {
         // Look for a blank line
-        size_t BlankLinePosition = ConnectionList[Index].MessageBuffer.find("\r\n\r\n");
+        size_t BlankLinePosition = ConnectionList[Index].Buffer.find("\r\n\r\n");
         if (BlankLinePosition == std::string::npos)
         {
             return; // No blank line found, still getting header data
         }
 
-        // Store the position of the blank line for easier use
-        ConnectionList[Index].BlankLineFound = true;
-        ConnectionList[Index].BlankLinePosition = BlankLinePosition;
+        // Store and remove head from the buffer
+        std::string Head = ConnectionList[Index].Buffer.substr(0, BlankLinePosition);
+        ConnectionList[Index].Buffer.erase(0, BlankLinePosition + 4);
 
-        // Split the head and body using the blank line
-        std::string Head = ConnectionList[Index].MessageBuffer.substr(0, BlankLinePosition);
-        std::string Body = ConnectionList[Index].MessageBuffer.substr(BlankLinePosition + 4);
-
-        // Split the request line from the headers
+        // Organize the data before moving on to body
         std::vector<std::string> RequestAndHeaders = SplitByDelimiter(Head, "\r\n");
-        if (RequestAndHeaders.empty())
+		if (RequestAndHeaders.empty())
         {
-            SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build()); 
-            Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request");
-            std::cerr << "Removing socket " << std::to_string(ConnectionList[Index].Socket.fd) << " from the list\n";
-            ConnectionList.erase(ConnectionList.begin() + Index);
+            ConnectionList[Index].State = Faulty;
             return;
         }
-
-        // Get the data from the request line
+		
         std::vector<std::string> RequestLine = SplitByDelimiter(RequestAndHeaders[0], " ");
         if (RequestLine.size() != 3)
         {
-            SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-            Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request"); 
-            std::cerr << "Removing socket " << std::to_string(ConnectionList[Index].Socket.fd) << " from the list\n";
-            ConnectionList.erase(ConnectionList.begin() + Index);
+            ConnectionList[Index].State = Faulty;
             return;
         }
 
-        // Make the request struct, pretty useless now but might become necessary as project scales
         ConnectionList[Index].ClientRequest.Method = RequestLine[0];
         ConnectionList[Index].ClientRequest.URI = RequestLine[1];
         ConnectionList[Index].ClientRequest.Version = RequestLine[2];
@@ -232,64 +234,124 @@ void HTTP::Server::HandleClientData(int Index)
                 ConnectionList[Index].ClientRequest.Headers[Key] = Value;
             }
         }
-    }
-    
-    if (!ConnectionList[Index].BlankLineFound)
-    {
-        return;
-    }
 
-    // Check the length of the body to see if all the data has arrived
-    size_t ContentLength = 0;
-    auto LengthIterator = ConnectionList[Index].ClientRequest.Headers.find("Content-Length");
+        // Try to find the "Content-Length" header if possible before moving onto the next state
+        long long ContentLength = 0;
+        auto LengthIterator = ConnectionList[Index].ClientRequest.Headers.find("Content-Length");
 	
-    if (LengthIterator != ConnectionList[Index].ClientRequest.Headers.end())
-    {
-        try
-		{
-			ContentLength = std::stoi(LengthIterator->second);
-		}
-		catch (const std::exception& Exception)
-		{
-            std::cerr << "Invalid Content-Length: " << Exception.what() << "\n";
+        if (LengthIterator != ConnectionList[Index].ClientRequest.Headers.end())
+        {
+            // Content-Length header found
+            try
+		    {
+			    ContentLength = std::stoll(LengthIterator->second);
+                if (ContentLength < 0)
+                {
+                    ConnectionList[Index].State = Faulty;
+                    return;
+                }
 
-			SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-			Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after finding route");	
-            std::cerr << "Removing socket " << std::to_string(ConnectionList[Index].Socket.fd) << " from the list\n";
+                ConnectionList[Index].BodyLength = ContentLength;
+		    }
+		    catch (const std::exception& Exception)
+		    {
+                std::cerr << "Invalid Content-Length: " << Exception.what() << "\n";
+                ConnectionList[Index].State = Faulty;
+                return;
+		    }
+
+            ConnectionList[Index].State = AcceptingBody;
+        } 
+        else
+        {
+            // GET request or header not found
+            ConnectionList[Index].State = ProcessingRequest;
+        }
+ 
+        break;
+    }
+    case AcceptingBody:    
+    {
+        if (ConnectionList[Index].BodyLength == 0)
+        {
+            ConnectionList[Index].State = ProcessingRequest;
+            return;
+        }
+
+        if (ConnectionList[Index].BodyLength > ConnectionList[Index].Buffer.length())
+        {
+            return; // Still getting body data
+        }
+
+        // Body data fully received
+        ConnectionList[Index].ClientRequest.Body = ConnectionList[Index].Buffer.substr(0, ConnectionList[Index].BodyLength);
+        ConnectionList[Index].Buffer = "";
+        ConnectionList[Index].State = ProcessingRequest;
+
+        break;
+    }
+    case ProcessingRequest:
+    {
+        // TODO: Write the request processing and response sending logic
+        ResponseBuilder Builder{};
+        std::string Method = ConnectionList[Index].ClientRequest.Method;
+        std::string Version = ConnectionList[Index].ClientRequest.Version;
+
+        if (Method != "GET" 
+            && Method != "PUT" 
+            && Method != "POST" 
+            && Method != "PATCH" 
+            && Method != "DELETE")
+        {
+            SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+			Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request");	
             ConnectionList.erase(ConnectionList.begin() + Index);
 			return;
-		}
-    } 
+        }
+        
+        if (Version != "HTTP/1.1" && Version != "HTTP/1.0")
+        {
+            SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+			Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request");	
+            ConnectionList.erase(ConnectionList.begin() + Index);
+			return;
+        }
 
-    if (ContentLength > ConnectionList[Index].ClientRequest.Body.size())
-    {
-        return; // Still getting body data
-    }
-
-	// Body data fully received
-	Enforce(ConnectionList[Index].BlankLinePosition != 0, "Blank line should be found by now");
-	ConnectionList[Index].ClientRequest.Body = ConnectionList[Index].MessageBuffer.substr(ConnectionList[Index].BlankLinePosition + 4);
-
-    // Try to find the requested route
-    std::string Key = ConnectionList[Index].ClientRequest.Method + ":" + ConnectionList[Index].ClientRequest.URI;
-    auto RouteIterator = Routes.find(Key);
+        // Try to find the requested route
+        std::string Key = ConnectionList[Index].ClientRequest.Method + ":" + ConnectionList[Index].ClientRequest.URI;
+        auto RouteIterator = Routes.find(Key);
     
-    if (RouteIterator != Routes.end())
-    {
-        SendResponse(ConnectionList[Index].Socket.fd, RouteIterator->second(ConnectionList[Index].ClientRequest));
-        Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after finding route");
-        std::cerr << "Found the requested route, sending response\n";
-        ConnectionList.erase(ConnectionList.begin() + Index);
-        return;
+        if (RouteIterator != Routes.end())
+        {
+            SendResponse(ConnectionList[Index].Socket.fd, RouteIterator->second(ConnectionList[Index].ClientRequest));
+            Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after finding route");
+            std::cerr << "Found the requested route, sending response\n";
+            ConnectionList.erase(ConnectionList.begin() + Index);
+            return;
+        }
+        else
+        {
+            SendResponse(ConnectionList[Index].Socket.fd, Builder.NotFound().Build());
+            Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after not finding route");
+            std::cerr << "Failed to find the requested resource, sending 404 error\n";
+            ConnectionList.erase(ConnectionList.begin() + Index);
+            return;
+        }
+
+        break;
     }
-    else
+    case Faulty:
     {
-        SendResponse(ConnectionList[Index].Socket.fd, Builder.NotFound().Build());
-        Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after finding route");
-        std::cerr << "Failed to find the requested resource, sending 404 error\n";
+        // Remove the connection from the list
+		Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket inside HandleClientData()");
+        std::cerr << "Faulty connection at socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
         ConnectionList.erase(ConnectionList.begin() + Index);
-        return;
+        break;
     }
+    default:
+        Enforce(false, "Parsing state should never be null unless there is a bug");
+        break;
+    } 
 }
 
 std::string HTTP::Server::CPPString(const Response& Res)

@@ -8,6 +8,15 @@
 
 namespace HTTP
 {
+    enum ParseState
+    {
+        Null,
+        AcceptingHeaders,
+        AcceptingBody,
+        ProcessingRequest,
+        Faulty
+    };
+    
     struct Request
     {
         std::string Method = "";
@@ -28,12 +37,11 @@ namespace HTTP
 
     struct Connection
     {
-		bool BlankLineFound = false;
-        size_t BlankLinePosition = 0;
+        size_t BodyLength = 0;
+        std::string Buffer = "";
+		ParseState State = Null;
         WSAPOLLFD Socket{};
-        std::string MessageBuffer = "";
 		Request ClientRequest{};
-		Response ClientResponse{};
     };
 
     class ResponseBuilder
