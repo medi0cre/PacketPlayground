@@ -360,7 +360,6 @@ void HTTP::Server::HandleClientData(int Index)
 std::string HTTP::Server::CPPString(const Response& Res)
 {
 	Enforce(Res.Version == "HTTP/1.1" || Res.Version == "HTTP/1.0", "HTTP version not supported");
-	Enforce(Res.Body.size() != 0, "Response body is empty");
 	Enforce(Res.Headers.size() != 0, "Headers are empty");
 
     std::string Result = "";
