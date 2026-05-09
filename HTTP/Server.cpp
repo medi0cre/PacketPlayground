@@ -5,7 +5,7 @@
 
 HTTP::Server::Server(const char* IPAddress, const char* Port)
 {
-	// Load winsock API version 2.2
+    // Load winsock API version 2.2
     WSADATA Data{};
     Enforce(WSAStartup(MAKEWORD(2, 2), &Data) == 0, "Failed to load WinSock");
     Enforce(LOBYTE(Data.wVersion) == 2 && HIBYTE(Data.wVersion) == 2 , "Version 2.2 of Winsock not available.");
@@ -14,8 +14,8 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
     addrinfo Hints{};
     addrinfo* InfoLinkedList = nullptr;
 
-	// TCP sockets because UDP is for people who enjoy 
-	// shooting themselves in the foot with military precision!
+    // TCP sockets because UDP is for people who enjoy 
+    // shooting themselves in the foot with military precision!
     Hints.ai_family = AF_UNSPEC;
     Hints.ai_socktype = SOCK_STREAM;
     Hints.ai_flags = AI_PASSIVE; 
@@ -25,7 +25,7 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
     SOCKET ListenFD = INVALID_SOCKET;
     for (addrinfo* Info = InfoLinkedList; Info != nullptr; Info = Info->ai_next)
     {
-        if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == SOCKET_ERROR)
+        if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == INVALID_SOCKET)
         {
             std::cerr << "Invalid socket, trying the next one...\n";
             continue;
@@ -45,8 +45,8 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
         break;
     }
 
-	Enforce(ListenFD != INVALID_SOCKET, "Failed to get valid listening socket");
-	Enforce(listen(ListenFD, MaxConnections) == 0, "Failed to listen for incoming connections");
+    Enforce(ListenFD != INVALID_SOCKET, "Failed to get valid listening socket");
+    Enforce(listen(ListenFD, MaxConnections) == 0, "Failed to listen for incoming connections");
     freeaddrinfo(InfoLinkedList);
     InfoLinkedList = nullptr;
 
@@ -64,14 +64,14 @@ void HTTP::Server::Run()
     while (true) 
     {
         std::vector<WSAPOLLFD> PollFDList{};
-		PollFDList.reserve(ConnectionList.size());
+        PollFDList.reserve(ConnectionList.size());
 
         for (int i = 0; i < ConnectionList.size(); i++)
-		{
+        {
             PollFDList.emplace_back(ConnectionList[i].Socket);
 		}
 
-        // Start polling with -1 timeout to poll forever
+		// Start polling with -1 timeout to poll forever
         Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
         Enforce(PollFDList.size() == ConnectionList.size(), "Mapping wrong between PollFDList and ConnectionList");
 
@@ -94,22 +94,22 @@ void HTTP::Server::Run()
 
 void HTTP::Server::HandleNewConnection()
 {
-	sockaddr_storage RemoteAddr{};
-	socklen_t AddrLen = sizeof(RemoteAddr);
-	SOCKET NewFD = INVALID_SOCKET;
-	char RemoteIP[INET6_ADDRSTRLEN] = "";
+    sockaddr_storage RemoteAddr{};
+    socklen_t AddrLen = sizeof(RemoteAddr);
+    SOCKET NewFD = INVALID_SOCKET;
+    char RemoteIP[INET6_ADDRSTRLEN] = "";
 
-	NewFD = accept(ConnectionList[0].Socket.fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
-	Enforce(NewFD != INVALID_SOCKET, "Invalid file descriptor obtained from accept() call");
+    NewFD = accept(ConnectionList[0].Socket.fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
+    Enforce(NewFD != INVALID_SOCKET, "Invalid file descriptor obtained from accept() call");
 	
-	if (ConnectionList.size() >= MaxConnections)
-	{
+    if (ConnectionList.size() >= MaxConnections)
+    {
 		std::cout << "No room in poll buffer to add new connection\n";
         Enforce(closesocket(NewFD) == 0, "Failed to close socket after reaching max capacity");
         return;
-	}
-	else
-	{
+    }
+    else
+    {
 		// Add the new socket to the poll
         Connection Client{};
         Client.Socket.fd = NewFD;
@@ -147,16 +147,16 @@ void HTTP::Server::HandleNewConnection()
 
 		std::cout << "New connection from " << RemoteIP;
 		std::cout << " on socket " << NewFD << "\n";
-	}
+    }
 }
 
 void HTTP::Server::HandleClientData(int Index)
 {
-	Enforce(Index >= 0 && Index < ConnectionList.size(), "Invalid connection index");
+    Enforce(Index >= 0 && Index < ConnectionList.size(), "Invalid connection index");
 
-	char Data[BufferSize]{};
-	int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, BufferSize, 0);
-	SOCKET SenderFD = ConnectionList[Index].Socket.fd;
+    char Data[BufferSize]{};
+    int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, BufferSize, 0);
+    SOCKET SenderFD = ConnectionList[Index].Socket.fd;
     Enforce(SenderFD != INVALID_SOCKET, "Socket is invalid and cannot be used");
 	    
     if (NumBytes <= 0)
@@ -399,7 +399,11 @@ void HTTP::Server::AddRoute(const std::string& Method, const std::string& Path, 
 
 HTTP::Server::~Server()
 {
-    Enforce(closesocket(ConnectionList[0].Socket.fd) == 0, "Failed to close the listening socket");
+	for (int i = 0; i < ConnectionList.size(); i++)
+	{
+		Enforce(closesocket(ConnectionList[0].Socket.fd) == 0, "Failed to close the listening socket");
+	}
+
     Enforce(WSACleanup() == 0, "Failed to clean up winsock API");
 }
 
