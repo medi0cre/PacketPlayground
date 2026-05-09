@@ -414,7 +414,7 @@ HTTP::Server::~Server()
 {
 	for (int i = 0; i < ConnectionList.size(); i++)
 	{
-		Enforce(closesocket(ConnectionList[0].Socket.fd) == 0, "Failed to close the listening socket");
+		Enforce(closesocket(ConnectionList[i].Socket.fd) == 0, "Failed to close the listening socket");
 	}
 
     Enforce(WSACleanup() == 0, "Failed to clean up winsock API");
