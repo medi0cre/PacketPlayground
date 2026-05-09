@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstdint>
+#include <algorithm>
 
 #include "Utils.h"
 
@@ -52,4 +53,17 @@ std::string Trim(const std::string& String)
 
     uint64_t Last = String.find_last_not_of(" \t\r\n");
     return String.substr(First, Last - First + 1);
+}
+
+std::string LowerCase(const std::string& Str)
+{
+    std::string Result = Str;
+
+    std::transform(Result.begin(), Result.end(), Result.begin(),
+    [](unsigned char Character)
+    { 
+        return std::tolower(Character); 
+    });
+
+    return Result;
 }

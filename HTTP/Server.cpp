@@ -413,10 +413,13 @@ HTTP::Server::~Server()
 {
 	for (int i = 0; i < ConnectionList.size(); i++)
 	{
-		Enforce(closesocket(ConnectionList[i].Socket.fd) == 0, "Failed to close the listening socket");
+		if (ConnectionList[i].Socket.fd != INVALID_SOCKET)
+		{
+			closesocket(ConnectionList[i].Socket.fd);
+		}
 	}
 
-    Enforce(WSACleanup() == 0, "Failed to clean up winsock API");
+    WSACleanup();
 }
 
 HTTP::Response HTTP::ResponseBuilder::Build()

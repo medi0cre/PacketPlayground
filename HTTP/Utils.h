@@ -5,3 +5,4 @@
 void Enforce(bool Condition, const char* Message);
 std::vector<std::string> SplitByDelimiter(const std::string& Input, const std::string& Delimiter);
 std::string Trim(const std::string& String);
+std::string LowerCase(const std::string& Str);
