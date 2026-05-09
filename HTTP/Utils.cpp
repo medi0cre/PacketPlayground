@@ -5,11 +5,13 @@
 
 void Enforce(bool Condition, const char* Message)
 {
-    if (!Condition)
+    if (Condition)
     {
-        std::cerr << Message << "\n";
-        std::abort();
+        return;
     }
+
+    std::cerr << Message << "\n";
+    std::abort();
 }
 
 std::vector<std::string> SplitByDelimiter(const std::string& Input, const std::string& Delimiter) 
@@ -43,7 +45,11 @@ std::vector<std::string> SplitByDelimiter(const std::string& Input, const std::s
 std::string Trim(const std::string& String)
 {
     uint64_t First = String.find_first_not_of(" \t\r\n");
-    if (First == std::string::npos) { return ""; }
+    if (First == std::string::npos) 
+    { 
+        return ""; 
+    }
+
     uint64_t Last = String.find_last_not_of(" \t\r\n");
     return String.substr(First, Last - First + 1);
 }

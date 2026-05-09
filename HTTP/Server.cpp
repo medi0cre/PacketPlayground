@@ -72,8 +72,8 @@ void HTTP::Server::Run()
 		}
 
 		// Start polling with -1 timeout to poll forever
-        Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
         Enforce(PollFDList.size() == ConnectionList.size(), "Mapping wrong between PollFDList and ConnectionList");
+		Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
 
         for (int ConnectionIndex = ConnectionList.size() - 1; ConnectionIndex >= 0; ConnectionIndex--) 
         {
@@ -82,6 +82,7 @@ void HTTP::Server::Run()
                 if (ConnectionIndex == 0)
 				{
 					HandleNewConnection();
+					Enforce(ConnectionList.size() == PollFDList.size() + 1 || ConnectionList.size() == MaxConnections, "Wrong handling of new connection");
 				}
                 else
 				{
@@ -97,7 +98,7 @@ void HTTP::Server::HandleNewConnection()
     sockaddr_storage RemoteAddr{};
     socklen_t AddrLen = sizeof(RemoteAddr);
     SOCKET NewFD = INVALID_SOCKET;
-    char RemoteIP[INET6_ADDRSTRLEN] = "";
+    char RemoteIP[INET6_ADDRSTRLEN]{};
 
     NewFD = accept(ConnectionList[0].Socket.fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
     Enforce(NewFD != INVALID_SOCKET, "Invalid file descriptor obtained from accept() call");
@@ -358,6 +359,10 @@ void HTTP::Server::HandleClientData(int Index)
 
 std::string HTTP::Server::CPPString(const Response& Res)
 {
+	Enforce(Res.Version == "HTTP/1.1" || Res.Version == "HTTP/1.0", "HTTP version not supported");
+	Enforce(Res.Body.size() != 0, "Response body is empty");
+	Enforce(Res.Headers.size() != 0, "Headers are empty");
+
     std::string Result = "";
     Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
     
@@ -373,6 +378,9 @@ std::string HTTP::Server::CPPString(const Response& Res)
 void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 {
     std::string ResponseString = CPPString(Res);
+	Enforce(ResponseString.size() != 0, "Empty response");
+	Enforce(ClientFD != INVALID_SOCKET, "Invalid client socket");
+
     size_t TotalSent = 0;
     size_t Remaining = ResponseString.size();
     
@@ -388,10 +396,15 @@ void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
         TotalSent += Sent;
         Remaining -= Sent;
     }
+
+	Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response was not fully sent");
 }
 
 void HTTP::Server::AddRoute(const std::string& Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
 {
+	Enforce(Method == "GET" || Method == "POST" || Method == "PATCH" || Method == "PUT" || Method == "DELETE", "Invalid method provided");
+	Enforce(Path.size() != 0, "Invalid path provided");
+
     std::string Key = Method + ":" + Path;
     Routes[Key] = Dispatcher;
     std::cout << "Added route: " << Method << " " << Path << "\n";
@@ -409,7 +422,7 @@ HTTP::Server::~Server()
 
 HTTP::Response HTTP::ResponseBuilder::Build()
 {
-    Res.Headers["Connection"] = "close";
+    Res.Headers["Connection"] = "Close";
     Res.Headers["Server"] = "PacketPlayground";
 	Res.Headers["Content-Length"] = std::to_string(Res.Body.size());
     return Res;
@@ -462,12 +475,14 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::NotFound()
                                      "</html>";
 
 	
-	return Reset()
-		.Version("HTTP/1.1")
-		.StatusCode(404)
-		.Status("Not Found")
-		.HTML()
-		.Body(NotFoundBody);
+	Reset();
+	Version("HTTP/1.1");
+	StatusCode(404);
+	Status("Not Found");
+	HTML();
+	Body(NotFoundBody);
+
+	return *this;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::BadRequest()
@@ -481,12 +496,14 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::BadRequest()
                                        "</html>";
 
 	
-	return Reset()
-		.Version("HTTP/1.1")
-		.StatusCode(400)
-		.Status("Bad Request")
-		.HTML()
-		.Body(BadRequestBody);
+	Reset();
+	Version("HTTP/1.1");
+	StatusCode(400);
+	Status("Bad Request");
+	HTML();
+	Body(BadRequestBody);
+
+	return *this;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::OK()
