@@ -87,6 +87,6 @@ namespace HTTP
         Server(const char* IPAddress, const char* Port);
         ~Server();
 	    void Run();
-	    void AddRoute(std::string& Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher);
+	    void AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher);
     };
 }

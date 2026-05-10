@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sstream>
 
 #include "Utils.h"
 #include "Server.h"
@@ -216,7 +217,15 @@ void HTTP::Server::HandleClientData(int Index)
 				break;
 			}
 			
-			std::vector<std::string> RequestLine = SplitByDelimiter(RequestAndHeaders[0], " ");
+			std::stringstream Stream(RequestAndHeaders[0]);
+			std::vector<std::string> RequestLine{};
+			std::string Token = "";
+
+			while (Stream >> Token)
+			{
+				RequestLine.emplace_back(Token);
+			}
+
 			if (RequestLine.size() != 3)
 			{
 				ConnectionList[Index].State = Faulty;
@@ -319,6 +328,13 @@ void HTTP::Server::HandleClientData(int Index)
 				return;
 			}
 
+			if (Version == "HTTP/1.1" 
+			&& ConnectionList[Index].ClientRequest.Headers.find("host") == ConnectionList[Index].ClientRequest.Headers.end())
+			{
+				ConnectionList[Index].State = Faulty;
+				break;
+			}
+
 			// Try to find the requested route
 			std::string Key = Method + ":" + ConnectionList[Index].ClientRequest.URI;
 			auto RouteIterator = Routes.find(Key);
@@ -399,7 +415,7 @@ void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 	Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response was not fully sent");
 }
 
-void HTTP::Server::AddRoute(std::string& Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
+void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
 {
 	Method = LowerCase(Method);
 	Enforce(Method == "get" || Method == "post" || Method == "patch" || Method == "put" || Method == "delete", "Invalid method provided");
