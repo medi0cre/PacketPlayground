@@ -55,15 +55,13 @@ std::string Trim(const std::string& String)
     return String.substr(First, Last - First + 1);
 }
 
-std::string LowerCase(const std::string& Str)
+std::string LowerCase(std::string& Str)
 {
-    std::string Result = Str;
-
-    std::transform(Result.begin(), Result.end(), Result.begin(),
+    std::transform(Str.begin(), Str.end(), Str.begin(),
     [](unsigned char Character)
     { 
         return std::tolower(Character); 
     });
 
-    return Result;
+    return Str;
 }

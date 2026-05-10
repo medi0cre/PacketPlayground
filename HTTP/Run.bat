@@ -1,6 +1,5 @@
-mkdir build
 cd build
-cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release ..
+mingw32-make clean
 mingw32-make
 PacketPlayground.exe
 pause

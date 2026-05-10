@@ -234,13 +234,13 @@ void HTTP::Server::HandleClientData(int Index)
 				{
 					std::string Key = Trim(RequestAndHeaders[i].substr(0, ColonPosition));
 					std::string Value = Trim(RequestAndHeaders[i].substr(ColonPosition + 1));
-					ConnectionList[Index].ClientRequest.Headers[Key] = Value;
+					ConnectionList[Index].ClientRequest.Headers[LowerCase(Key)] = Value;
 				}
 			}
 
 			// Try to find the "Content-Length" header if possible before moving onto the next state
 			long long ContentLength = 0;
-			auto LengthIterator = ConnectionList[Index].ClientRequest.Headers.find("Content-Length");
+			auto LengthIterator = ConnectionList[Index].ClientRequest.Headers.find("content-length");
 		
 			if (LengthIterator != ConnectionList[Index].ClientRequest.Headers.end())
 			{
@@ -296,14 +296,14 @@ void HTTP::Server::HandleClientData(int Index)
 		case ProcessingRequest:
 		{
 			ResponseBuilder Builder{};
-			std::string Method = ConnectionList[Index].ClientRequest.Method;
+			std::string Method = LowerCase(ConnectionList[Index].ClientRequest.Method);
 			std::string Version = ConnectionList[Index].ClientRequest.Version;
 
-			if (Method != "GET" 
-				&& Method != "PUT" 
-				&& Method != "POST" 
-				&& Method != "PATCH" 
-				&& Method != "DELETE")
+			if (Method != "get" 
+				&& Method != "put" 
+				&& Method != "post" 
+				&& Method != "patch" 
+				&& Method != "delete")
 			{
 				SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
 				Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request");	
@@ -320,7 +320,7 @@ void HTTP::Server::HandleClientData(int Index)
 			}
 
 			// Try to find the requested route
-			std::string Key = ConnectionList[Index].ClientRequest.Method + ":" + ConnectionList[Index].ClientRequest.URI;
+			std::string Key = Method + ":" + ConnectionList[Index].ClientRequest.URI;
 			auto RouteIterator = Routes.find(Key);
 		
 			if (RouteIterator != Routes.end())
@@ -399,9 +399,10 @@ void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 	Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response was not fully sent");
 }
 
-void HTTP::Server::AddRoute(const std::string& Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
+void HTTP::Server::AddRoute(std::string& Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
 {
-	Enforce(Method == "GET" || Method == "POST" || Method == "PATCH" || Method == "PUT" || Method == "DELETE", "Invalid method provided");
+	Method = LowerCase(Method);
+	Enforce(Method == "get" || Method == "post" || Method == "patch" || Method == "put" || Method == "delete", "Invalid method provided");
 	Enforce(Path.size() != 0, "Invalid path provided");
 
     std::string Key = Method + ":" + Path;
