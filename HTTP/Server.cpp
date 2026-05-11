@@ -322,7 +322,7 @@ void HTTP::Server::HandleClientData(int Index)
 
 			// Body data fully received
 			ConnectionList[Index].ClientRequest.Body = ConnectionList[Index].Buffer.substr(0, ConnectionList[Index].BodyLength);
-			ConnectionList[Index].Buffer = "";
+			ConnectionList[Index].Buffer.erase(0, ConnectionList[Index].BodyLength);
 			ConnectionList[Index].State = ProcessingRequest;
 
 			break;
@@ -441,7 +441,6 @@ void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 
 void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
 {
-	Method = LowerCase(Method);
 	Enforce(Method == "GET" || Method == "POST" || Method == "PATCH" || Method == "PUT" || Method == "DELETE", "Invalid method provided");
 	Enforce(Path.size() != 0, "Invalid path provided");
 
