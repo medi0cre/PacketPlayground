@@ -65,3 +65,33 @@ std::string LowerCase(std::string& Str)
 
     return Str;
 }
+
+int SpaceCount(const std::string& Str)
+{
+    int Count = 0;
+
+    for (int i = 0; i < Str.length(); i++)
+    {
+        if (Str[i] == ' ')
+        {
+            Count++;
+        }
+    }
+
+    return Count;
+}
+
+int WhiteSpaceCount(const std::string& Str)
+{
+    int Count = 0;
+
+    for (int i = 0; i < Str.length(); i++)
+    {
+        if (Str[i] == ' ' || Str[i] == '\t' || Str[i] == '\r' || Str[i] == '\n')
+        {
+            Count++;
+        }
+    }
+
+    return Count;
+}

@@ -21,6 +21,7 @@ namespace HTTP
     {
         std::string Method = "";
         std::string URI = "";
+        std::string Query = "";
         std::string Version = "";
         std::unordered_map<std::string, std::string> Headers{};
         std::string Body = "";

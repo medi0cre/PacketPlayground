@@ -1,5 +1,4 @@
 #include <iostream>
-#include <sstream>
 
 #include "Utils.h"
 #include "Server.h"
@@ -178,7 +177,8 @@ void HTTP::Server::HandleClientData(int Index)
         ConnectionList.erase(ConnectionList.begin() + Index);
         return;
     }
-	
+
+	ResponseBuilder Builder{};
 	ConnectionList[Index].Buffer += std::string(Data, NumBytes);
 
     // Check for suspicious connections
@@ -205,11 +205,9 @@ void HTTP::Server::HandleClientData(int Index)
 				return; // No blank line found, still getting header data
 			}
 
-			// Store and remove head from the buffer
 			std::string Head = ConnectionList[Index].Buffer.substr(0, BlankLinePosition);
 			ConnectionList[Index].Buffer.erase(0, BlankLinePosition + 4);
 
-			// Organize the data before moving on to body
 			std::vector<std::string> RequestAndHeaders = SplitByDelimiter(Head, "\r\n");
 			if (RequestAndHeaders.empty())
 			{
@@ -217,15 +215,13 @@ void HTTP::Server::HandleClientData(int Index)
 				break;
 			}
 			
-			std::stringstream Stream(RequestAndHeaders[0]);
-			std::vector<std::string> RequestLine{};
-			std::string Token = "";
-
-			while (Stream >> Token)
+			if (SpaceCount(RequestAndHeaders[0]) != 2)
 			{
-				RequestLine.emplace_back(Token);
-			}
+				ConnectionList[Index].State = Faulty;
+				break;
+			} 
 
+			std::vector<std::string> RequestLine = SplitByDelimiter(RequestAndHeaders[0], " ");
 			if (RequestLine.size() != 3)
 			{
 				ConnectionList[Index].State = Faulty;
@@ -233,18 +229,47 @@ void HTTP::Server::HandleClientData(int Index)
 			}
 
 			ConnectionList[Index].ClientRequest.Method = RequestLine[0];
-			ConnectionList[Index].ClientRequest.URI = RequestLine[1];
 			ConnectionList[Index].ClientRequest.Version = RequestLine[2];
 
+			size_t QuestionMarkPosition = RequestLine[1].find('?');
+			if (QuestionMarkPosition == std::string::npos)
+			{
+				ConnectionList[Index].ClientRequest.URI = RequestLine[1];
+			}
+			else
+			{
+				ConnectionList[Index].ClientRequest.URI = RequestLine[1].substr(0, QuestionMarkPosition);
+				ConnectionList[Index].ClientRequest.Query = RequestLine[1].substr(QuestionMarkPosition + 1);
+			}
+
+			bool ValidHeaders = true;
 			for (int i = 1; i < RequestAndHeaders.size(); i++)
 			{
 				size_t ColonPosition = RequestAndHeaders[i].find(':');
 				if (ColonPosition != std::string::npos)
 				{
-					std::string Key = Trim(RequestAndHeaders[i].substr(0, ColonPosition));
 					std::string Value = Trim(RequestAndHeaders[i].substr(ColonPosition + 1));
+					std::string Key = RequestAndHeaders[i].substr(0, ColonPosition);
+					
+					if (WhiteSpaceCount(RequestAndHeaders[i].substr(0, ColonPosition)) != 0)
+					{
+						ValidHeaders = false;
+						break;
+					}
+				
 					ConnectionList[Index].ClientRequest.Headers[LowerCase(Key)] = Value;
 				}
+				else
+				{
+					ValidHeaders = false;
+					break;
+				}
+			}
+				
+			if (!ValidHeaders)
+			{
+				ConnectionList[Index].State = Faulty;
+				break;
 			}
 
 			// Try to find the "Content-Length" header if possible before moving onto the next state
@@ -304,15 +329,14 @@ void HTTP::Server::HandleClientData(int Index)
 		}
 		case ProcessingRequest:
 		{
-			ResponseBuilder Builder{};
-			std::string Method = LowerCase(ConnectionList[Index].ClientRequest.Method);
+			std::string Method = ConnectionList[Index].ClientRequest.Method;
 			std::string Version = ConnectionList[Index].ClientRequest.Version;
 
-			if (Method != "get" 
-				&& Method != "put" 
-				&& Method != "post" 
-				&& Method != "patch" 
-				&& Method != "delete")
+			if (Method != "GET" 
+				&& Method != "PUT" 
+				&& Method != "POST" 
+				&& Method != "PATCH" 
+				&& Method != "DELETE")
 			{
 				SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
 				Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request");	
@@ -360,7 +384,7 @@ void HTTP::Server::HandleClientData(int Index)
 		}
 		case Faulty:
 		{
-			// Remove the connection from the list
+			SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
 			Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket inside HandleClientData()");
 			std::cerr << "Faulty connection at socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
 			ConnectionList.erase(ConnectionList.begin() + Index);
@@ -418,7 +442,7 @@ void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
 {
 	Method = LowerCase(Method);
-	Enforce(Method == "get" || Method == "post" || Method == "patch" || Method == "put" || Method == "delete", "Invalid method provided");
+	Enforce(Method == "GET" || Method == "POST" || Method == "PATCH" || Method == "PUT" || Method == "DELETE", "Invalid method provided");
 	Enforce(Path.size() != 0, "Invalid path provided");
 
     std::string Key = Method + ":" + Path;
@@ -441,7 +465,7 @@ HTTP::Server::~Server()
 
 HTTP::Response HTTP::ResponseBuilder::Build()
 {
-    Res.Headers["Connection"] = "Close";
+    Res.Headers["Connection"] = "close";
     Res.Headers["Server"] = "PacketPlayground";
 	Res.Headers["Content-Length"] = std::to_string(Res.Body.size());
     return Res;
