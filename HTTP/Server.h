@@ -16,7 +16,14 @@ namespace HTTP
         ProcessingRequest,
         Faulty
     };
-    
+   
+    enum ParseResult
+    {
+        Error,
+        Incomplete,
+        Complete
+    };
+
     struct Request
     {
         std::string Method = "";
@@ -35,16 +42,7 @@ namespace HTTP
         std::unordered_map<std::string, std::string> Headers{};
         std::string Body = "";
     };
-
-    struct Connection
-    {
-        size_t BodyLength = 0;
-        std::string Buffer = "";
-		ParseState State = Null;
-        WSAPOLLFD Socket{};
-		Request ClientRequest{};
-    };
-
+ 
     class ResponseBuilder
     {
 	private:
@@ -68,6 +66,23 @@ namespace HTTP
 		ResponseBuilder& OK();
 		ResponseBuilder& JSON();
 		ResponseBuilder& HTML();
+    };
+
+    class Parser
+    {
+    public:
+        ParseState State = Null;
+        std::string Buffer = "";
+        size_t BodyLength = 0;
+        Request ClientRequest{};
+
+        ParseResult Feed(std::string Data);
+    };
+
+    struct Connection
+    {
+        WSAPOLLFD Socket{};
+        Parser DataParser{};
     };
 
     class Server
