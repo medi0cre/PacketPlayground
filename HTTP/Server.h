@@ -75,8 +75,10 @@ namespace HTTP
         std::string Buffer = "";
         size_t BodyLength = 0;
         Request ClientRequest{};
+        bool Close = false;
 
-        ParseResult Feed(std::string Data);
+        ParseResult Parse(std::string Data);
+        void Reset();
     };
 
     struct Connection
@@ -97,6 +99,7 @@ namespace HTTP
 	    void HandleNewConnection();
 	    void HandleClientData(int Index);
 	    void SendResponse(SOCKET ClientFD, const Response& Res);
+        void RemoveConnection(int Index);
         std::string CPPString(const Response& Res);
 
     public:

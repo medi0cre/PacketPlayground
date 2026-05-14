@@ -172,22 +172,20 @@ void HTTP::Server::HandleClientData(int Index)
 			std::cerr << "Error receiving message from socket " << SenderFD << "\n";
             std::cerr << "Error Code: " << WSAGetLastError() << "\n";
 		}
-		
-        Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket inside HandleClientData()");
-        ConnectionList.erase(ConnectionList.begin() + Index);
+	
+		RemoveConnection(Index);
         return;
     }
 
 	ResponseBuilder Builder{};
-	ParseResult Result = ConnectionList[Index].DataParser.Feed(std::string(Data, NumBytes));
+	ParseResult Result = ConnectionList[Index].DataParser.Parse(std::string(Data, NumBytes));
 	
 	// Check for suspicious connections
     if (ConnectionList[Index].DataParser.Buffer.length() > BufferSize || ConnectionList[Index].DataParser.ClientRequest.Body.length() > BufferSize)
     {
         std::cerr << "Total message size exceeded 32 kibibytes, potential DDoS attack\n";
         std::cerr << "Removing malicious socket " << std::to_string(ConnectionList[Index].Socket.fd) << " from the list\n";
-        Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after potential DDoS attack");
-        ConnectionList.erase(ConnectionList.begin() + Index);
+		RemoveConnection(Index);
         return;
     }
 
@@ -200,9 +198,8 @@ void HTTP::Server::HandleClientData(int Index)
 	case Error:
 	{
 		SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-		Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket inside HandleClientData()");
 		std::cerr << "Faulty connection at socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
-		ConnectionList.erase(ConnectionList.begin() + Index);
+		RemoveConnection(Index);
 		return;
 	}
 	case Complete:
@@ -218,16 +215,14 @@ void HTTP::Server::HandleClientData(int Index)
 			&& Method != "DELETE")
 		{
 			SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-			Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request");	
-			ConnectionList.erase(ConnectionList.begin() + Index);
+			RemoveConnection(Index);
 			return;
 		}
 		
 		if (Version != "HTTP/1.1" && Version != "HTTP/1.0")
 		{
 			SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-			Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request");	
-			ConnectionList.erase(ConnectionList.begin() + Index);
+			RemoveConnection(Index);
 			return;
 		}
 		
@@ -235,8 +230,7 @@ void HTTP::Server::HandleClientData(int Index)
 		&& ClientRequest.Headers.find("host") == ClientRequest.Headers.end())
 		{
 			SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-			Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after bad request");	
-			ConnectionList.erase(ConnectionList.begin() + Index);
+			RemoveConnection(Index);
 			return;
 		}
 
@@ -247,17 +241,23 @@ void HTTP::Server::HandleClientData(int Index)
 		if (RouteIterator != Routes.end())
 		{
 			SendResponse(ConnectionList[Index].Socket.fd, RouteIterator->second(ClientRequest));
-			Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after finding route");
 			std::cerr << "Found the requested route, sending response\n";
-			ConnectionList.erase(ConnectionList.begin() + Index);
+			
+			if (ConnectionList[Index].DataParser.Close)
+			{
+				RemoveConnection(Index);
+			}
+			else
+			{
+				ConnectionList[Index].DataParser.Reset();
+			}
 			return;
 		}
 		else
 		{
 			SendResponse(ConnectionList[Index].Socket.fd, Builder.NotFound().Build());
-			Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket after not finding route");
 			std::cerr << "Failed to find the requested resource, sending 404 error\n";
-			ConnectionList.erase(ConnectionList.begin() + Index);
+			RemoveConnection(Index);
 			return;
 		}
 
@@ -269,7 +269,7 @@ void HTTP::Server::HandleClientData(int Index)
 	}
 }
 
-HTTP::ParseResult HTTP::Parser::Feed(std::string Data)
+HTTP::ParseResult HTTP::Parser::Parse(std::string Data)
 {
 	Buffer += Data;
 	while (true)
@@ -338,7 +338,28 @@ HTTP::ParseResult HTTP::Parser::Feed(std::string Data)
 					return Error;
 				}
 			}
-				
+			
+			auto ConnectionIterator = ClientRequest.Headers.find("connection");
+			if (ConnectionIterator != ClientRequest.Headers.end())
+			{
+				if (ClientRequest.Version == "HTTP/1.0")
+				{
+					Close = true;
+					if (ConnectionIterator->second == "keep-alive")
+					{
+						Close = false;
+					}
+				}
+				else if (ClientRequest.Version == "HTTP/1.1")
+				{
+					Close = false;
+					if (ConnectionIterator->second == "close")
+					{
+						Close = true;
+					}
+				}
+			}
+
 			// Try to find the "Content-Length" header if possible before moving onto the next state
 			long long ContentLength = 0;
 			auto LengthIterator = ClientRequest.Headers.find("content-length");
@@ -400,6 +421,14 @@ HTTP::ParseResult HTTP::Parser::Feed(std::string Data)
 	}
 }
 
+void HTTP::Parser::Reset()
+{
+	State = AcceptingHeaders;
+    BodyLength = 0;
+    ClientRequest = {};
+    Close = false;
+}
+
 std::string HTTP::Server::CPPString(const Response& Res)
 {
 	Enforce(Res.Version == "HTTP/1.1" || Res.Version == "HTTP/1.0", "HTTP version not supported");
@@ -442,6 +471,12 @@ void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 	Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response was not fully sent");
 }
 
+void HTTP::Server::RemoveConnection(int Index)
+{
+	Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket");
+	ConnectionList.erase(ConnectionList.begin() + Index);
+}
+
 void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
 {
 	Enforce(Method == "GET" || Method == "POST" || Method == "PATCH" || Method == "PUT" || Method == "DELETE", "Invalid method provided");
@@ -467,7 +502,6 @@ HTTP::Server::~Server()
 
 HTTP::Response HTTP::ResponseBuilder::Build()
 {
-    Res.Headers["Connection"] = "close";
     Res.Headers["Server"] = "PacketPlayground";
 	Res.Headers["Content-Length"] = std::to_string(Res.Body.size());
     return Res;
