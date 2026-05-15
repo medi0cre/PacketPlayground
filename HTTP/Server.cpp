@@ -101,12 +101,17 @@ void HTTP::Server::HandleNewConnection()
     char RemoteIP[INET6_ADDRSTRLEN]{};
 
     NewFD = accept(ConnectionList[0].Socket.fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
-    Enforce(NewFD != INVALID_SOCKET, "Invalid file descriptor obtained from accept() call");
+    if (NewFD == INVALID_SOCKET)
+	{
+		std::cerr << "Invalid file descriptor obtained from accept() call\n";
+		closesocket(NewFD);
+		return;
+	} 
 	
     if (ConnectionList.size() >= MaxConnections)
     {
-		std::cout << "No room in poll buffer to add new connection\n";
-        Enforce(closesocket(NewFD) == 0, "Failed to close socket after reaching max capacity");
+		std::cerr << "No room in poll buffer to add new connection\n";
+        closesocket(NewFD);
         return;
     }
     else
@@ -158,8 +163,7 @@ void HTTP::Server::HandleClientData(int Index)
     char Data[BufferSize];
     int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, BufferSize, 0);
     SOCKET SenderFD = ConnectionList[Index].Socket.fd;
-    Enforce(SenderFD != INVALID_SOCKET, "Socket is invalid and cannot be used");
-	    
+
     if (NumBytes <= 0)
 	{
 		// Got error or connection closed by client
@@ -429,9 +433,6 @@ void HTTP::Parser::Reset()
 
 std::string HTTP::Server::CPPString(const Response& Res)
 {
-	Enforce(Res.Version == "HTTP/1.1" || Res.Version == "HTTP/1.0", "HTTP version not supported");
-	Enforce(Res.Headers.size() != 0, "Headers are empty");
-
     std::string Result = "";
     Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
     
@@ -447,8 +448,7 @@ std::string HTTP::Server::CPPString(const Response& Res)
 void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 {
     std::string ResponseString = CPPString(Res);
-	Enforce(ResponseString.size() != 0, "Empty response");
-	Enforce(ClientFD != INVALID_SOCKET, "Invalid client socket");
+	Enforce(ResponseString.size() != 0, "Response should NEVER be empty");
 
     size_t TotalSent = 0;
     size_t Remaining = ResponseString.size();
@@ -466,19 +466,28 @@ void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
         Remaining -= Sent;
     }
 
-	Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response was not fully sent");
+	Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response should always be fully sent unless there is a bug");
 }
 
 void HTTP::Server::RemoveConnection(int Index)
 {
-	Enforce(closesocket(ConnectionList[Index].Socket.fd) == 0, "Failed to close socket");
+	closesocket(ConnectionList[Index].Socket.fd);
 	ConnectionList.erase(ConnectionList.begin() + Index);
 }
 
 void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
 {
-	Enforce(Method == "GET" || Method == "POST" || Method == "PATCH" || Method == "PUT" || Method == "DELETE", "Invalid method provided");
-	Enforce(Path.size() != 0, "Invalid path provided");
+	if (Path.size() == 0)
+	{
+		std::cerr << "Empty path provided, failed to add route\n";
+		return;
+	}
+
+	if (Method != "GET" && Method != "POST" && Method != "PATCH" && Method != "PUT" && Method != "DELETE")
+	{
+		std::cerr << "Invalid method provided, failed to add route\n";
+		std::cerr << "Please check whether all methods are uppercase and valid, e.g. GET, POST, PATCH\n";
+	}
 
     std::string Key = Method + ":" + Path;
     Routes[Key] = Dispatcher;
