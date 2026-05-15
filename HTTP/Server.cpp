@@ -155,7 +155,7 @@ void HTTP::Server::HandleClientData(int Index)
 {
     Enforce(Index >= 0 && Index < ConnectionList.size(), "Invalid connection index");
 
-    char Data[BufferSize]{};
+    char Data[BufferSize];
     int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, BufferSize, 0);
     SOCKET SenderFD = ConnectionList[Index].Socket.fd;
     Enforce(SenderFD != INVALID_SOCKET, "Socket is invalid and cannot be used");
@@ -178,10 +178,11 @@ void HTTP::Server::HandleClientData(int Index)
     }
 
 	ResponseBuilder Builder{};
-	ParseResult Result = ConnectionList[Index].DataParser.Parse(std::string(Data, NumBytes));
+	ConnectionList[Index].Buffer += std::string(Data, NumBytes);
+	ParseResult Result = ConnectionList[Index].DataParser.Parse(ConnectionList[Index].Buffer, ConnectionList[Index].Close);
 	
 	// Check for suspicious connections
-    if (ConnectionList[Index].DataParser.Buffer.length() > BufferSize || ConnectionList[Index].DataParser.ClientRequest.Body.length() > BufferSize)
+    if (ConnectionList[Index].Buffer.length() > BufferSize || ConnectionList[Index].DataParser.ClientRequest.Body.length() > BufferSize)
     {
         std::cerr << "Total message size exceeded 32 kibibytes, potential DDoS attack\n";
         std::cerr << "Removing malicious socket " << std::to_string(ConnectionList[Index].Socket.fd) << " from the list\n";
@@ -204,9 +205,9 @@ void HTTP::Server::HandleClientData(int Index)
 	}
 	case Complete:
 	{
-		std::string Method = ConnectionList[Index].DataParser.ClientRequest.Method;
-		std::string Version = ConnectionList[Index].DataParser.ClientRequest.Version;
 		Request ClientRequest = ConnectionList[Index].DataParser.ClientRequest;
+		std::string Method = ClientRequest.Method;
+		std::string Version = ClientRequest.Version;
 
 		if (Method != "GET" 
 			&& Method != "PUT" 
@@ -243,7 +244,7 @@ void HTTP::Server::HandleClientData(int Index)
 			SendResponse(ConnectionList[Index].Socket.fd, RouteIterator->second(ClientRequest));
 			std::cerr << "Found the requested route, sending response\n";
 			
-			if (ConnectionList[Index].DataParser.Close)
+			if (ConnectionList[Index].Close)
 			{
 				RemoveConnection(Index);
 			}
@@ -269,9 +270,8 @@ void HTTP::Server::HandleClientData(int Index)
 	}
 }
 
-HTTP::ParseResult HTTP::Parser::Parse(std::string Data)
+HTTP::ParseResult HTTP::Parser::Parse(std::string& Buffer, bool& Close)
 {
-	Buffer += Data;
 	while (true)
 	{
 		switch (State)
@@ -376,7 +376,7 @@ HTTP::ParseResult HTTP::Parser::Parse(std::string Data)
 					}
 					else
 					{
-						BodyLength = ContentLength;
+						ClientRequest.BodyLength = ContentLength;
 						State = AcceptingBody;
 						break;
 					}
@@ -397,19 +397,19 @@ HTTP::ParseResult HTTP::Parser::Parse(std::string Data)
 		}
 		case AcceptingBody:
 		{
-			if (BodyLength == 0)
+			if (ClientRequest.BodyLength == 0)
 			{
 				return Complete;
 			}
 
-			if (BodyLength > Buffer.length())
+			if (ClientRequest.BodyLength > Buffer.length())
 			{
 				return Incomplete; // Still getting body data
 			}
 
 			// Body data fully received
-			ClientRequest.Body = Buffer.substr(0, BodyLength);
-			Buffer.erase(0, BodyLength);
+			ClientRequest.Body = Buffer.substr(0, ClientRequest.BodyLength);
+			Buffer.erase(0, ClientRequest.BodyLength);
 			return Complete;
 
 			break;
@@ -424,9 +424,7 @@ HTTP::ParseResult HTTP::Parser::Parse(std::string Data)
 void HTTP::Parser::Reset()
 {
 	State = AcceptingHeaders;
-    BodyLength = 0;
     ClientRequest = {};
-    Close = false;
 }
 
 std::string HTTP::Server::CPPString(const Response& Res)

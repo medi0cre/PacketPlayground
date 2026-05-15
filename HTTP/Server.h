@@ -31,7 +31,8 @@ namespace HTTP
         std::string Query = "";
         std::string Version = "";
         std::unordered_map<std::string, std::string> Headers{};
-        std::string Body = "";
+        std::string Body = ""; 
+        size_t BodyLength = 0;
     };
 	
     struct Response
@@ -72,19 +73,18 @@ namespace HTTP
     {
     public:
         ParseState State = Null;
-        std::string Buffer = "";
-        size_t BodyLength = 0;
         Request ClientRequest{};
-        bool Close = false;
 
-        ParseResult Parse(std::string Data);
+        ParseResult Parse(std::string& Buffer, bool& Close);
         void Reset();
     };
 
     struct Connection
     {
+        std::string Buffer = "";
         WSAPOLLFD Socket{};
         Parser DataParser{};
+        bool Close = false;
     };
 
     class Server
