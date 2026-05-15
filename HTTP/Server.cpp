@@ -511,6 +511,14 @@ HTTP::Response HTTP::ResponseBuilder::Build()
 {
     Res.Headers["Server"] = "PacketPlayground";
 	Res.Headers["Content-Length"] = std::to_string(Res.Body.size());
+
+	// Why RFC? Just why? Why is the default behaviour keep-alive?
+	// Do you WANT to get DoS attacks or something?
+	if (Res.Headers.find("Connection") == Res.Headers.end()) 
+	{
+        Res.Headers["Connection"] = "keep-alive";
+    }
+
     return Res;
 }
 
@@ -566,6 +574,7 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::NotFound()
 	StatusCode(404);
 	Status("Not Found");
 	HTML();
+	Header("Connection", "close");
 	Body(NotFoundBody);
 
 	return *this;
@@ -587,6 +596,7 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::BadRequest()
 	StatusCode(400);
 	Status("Bad Request");
 	HTML();
+	Header("Connection", "close");
 	Body(BadRequestBody);
 
 	return *this;
