@@ -162,116 +162,148 @@ void HTTP::Server::HandleClientData(int Index)
 
     char Data[BufferSize];
     int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, BufferSize, 0);
-    SOCKET SenderFD = ConnectionList[Index].Socket.fd;
 
     if (NumBytes <= 0)
-	{
-		// Got error or connection closed by client
-		if (NumBytes == 0)
-		{
-			std::cerr << "Socket " << SenderFD << " closed the connection\n";
-		}
-		else
-		{
-			std::cerr << "Error receiving message from socket " << SenderFD << "\n";
-            std::cerr << "Error Code: " << WSAGetLastError() << "\n";
-		}
-	
-		RemoveConnection(Index);
-        return;
-    }
-
-	ResponseBuilder Builder{};
-	ConnectionList[Index].Buffer += std::string(Data, NumBytes);
-	ParseResult Result = ConnectionList[Index].DataParser.Parse(ConnectionList[Index].Buffer, ConnectionList[Index].Close);
-	
-	// Check for suspicious connections
-    if (ConnectionList[Index].Buffer.length() > BufferSize || ConnectionList[Index].DataParser.ClientRequest.Body.length() > BufferSize)
     {
-        std::cerr << "Total message size exceeded 32 kibibytes, potential DDoS attack\n";
-        std::cerr << "Removing malicious socket " << std::to_string(ConnectionList[Index].Socket.fd) << " from the list\n";
-		RemoveConnection(Index);
+        if (NumBytes == 0)
+        {
+            std::cerr << "Socket " << ConnectionList[Index].Socket.fd << " closed the connection\n";
+        }
+        else
+        {
+            std::cerr << "Error receiving message from socket " << ConnectionList[Index].Socket.fd << "\n";
+            std::cerr << "Error Code: " << WSAGetLastError() << "\n";
+        }
+    
+        RemoveConnection(Index);
         return;
     }
 
-	switch (Result)
-	{
-	case Incomplete:
-	{
-		return;
-	}
-	case Error:
-	{
-		SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-		std::cerr << "Faulty connection at socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
-		RemoveConnection(Index);
-		return;
-	}
-	case Complete:
-	{
-		Request ClientRequest = ConnectionList[Index].DataParser.ClientRequest;
-		std::string Method = ClientRequest.Method;
-		std::string Version = ClientRequest.Version;
+    ConnectionList[Index].Buffer += std::string(Data, NumBytes);
+    
+    // Process all complete requests in the buffer to handle pipelining
+    while (true)
+    {
+        // Check for suspicious connections
+        if (ConnectionList[Index].Buffer.length() > BufferSize || 
+            ConnectionList[Index].DataParser.ClientRequest.Body.length() > BufferSize)
+        {
+            std::cerr << "Total message size exceeded 32 kibibytes, potential DDoS attack\n";
+            std::cerr << "Removing malicious socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
+            RemoveConnection(Index);
+            return;
+        }
 
-		if (Method != "GET" 
-			&& Method != "PUT" 
-			&& Method != "POST" 
-			&& Method != "PATCH" 
-			&& Method != "DELETE")
-		{
-			SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-			RemoveConnection(Index);
-			return;
-		}
-		
-		if (Version != "HTTP/1.1" && Version != "HTTP/1.0")
-		{
-			SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-			RemoveConnection(Index);
-			return;
-		}
-		
-		if (Version == "HTTP/1.1" 
-		&& ClientRequest.Headers.find("host") == ClientRequest.Headers.end())
-		{
-			SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-			RemoveConnection(Index);
-			return;
-		}
+        ResponseBuilder Builder{};
+        ParseResult Result = ConnectionList[Index].DataParser.Parse(
+            ConnectionList[Index].Buffer, 
+            ConnectionList[Index].Close);
+        
+        switch (Result)
+        {
+            case Incomplete:
+            {
+                return;
+            }
+            
+            case Error:
+            {
+                SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+                std::cerr << "Faulty connection at socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
+                RemoveConnection(Index);
+                return;
+            }
+            
+            case Complete:
+            {
+                Request ClientRequest = ConnectionList[Index].DataParser.ClientRequest;
+                std::string Method = ClientRequest.Method;
+                std::string Version = ClientRequest.Version;
 
-		// Try to find the requested route
-		std::string Key = Method + ":" + ClientRequest.URI;
-		auto RouteIterator = Routes.find(Key);
-	
-		if (RouteIterator != Routes.end())
-		{
-			SendResponse(ConnectionList[Index].Socket.fd, RouteIterator->second(ClientRequest));
-			std::cerr << "Found the requested route, sending response\n";
-			
-			if (ConnectionList[Index].Close)
-			{
-				RemoveConnection(Index);
-			}
-			else
-			{
-				ConnectionList[Index].DataParser.Reset();
-			}
-			return;
-		}
-		else
-		{
-			SendResponse(ConnectionList[Index].Socket.fd, Builder.NotFound().Build());
-			std::cerr << "Failed to find the requested resource, sending 404 error\n";
-			RemoveConnection(Index);
-			return;
-		}
+                // Validate HTTP method
+                if (Method != "GET" && Method != "PUT" && Method != "POST" && 
+                    Method != "PATCH" && Method != "DELETE")
+                {
+                    SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+                    RemoveConnection(Index);
+                    return;
+                }
+                
+                // Validate HTTP version
+                if (Version != "HTTP/1.1" && Version != "HTTP/1.0")
+                {
+                    SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+                    RemoveConnection(Index);
+                    return;
+                }
+                
+                // HTTP/1.1 requires host header
+                if (Version == "HTTP/1.1" && 
+                    ClientRequest.Headers.find("host") == ClientRequest.Headers.end())
+                {
+                    SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
+                    RemoveConnection(Index);
+                    return;
+                }
 
-		return;
-	}
-	default:
-		Enforce(false, "Unknown parse result encountered");
-		return;
-	}
+                // Route the request
+                std::string Key = Method + ":" + ClientRequest.URI;
+                auto RouteIterator = Routes.find(Key);
+               
+                Response Res{};
+                if (RouteIterator != Routes.end())
+                {
+                    Res = RouteIterator->second(ClientRequest);
+                    std::cerr << "Found the requested route, sending response\n";
+                }
+                else
+                {
+                    Res = Builder.NotFound().Build();
+                    std::cerr << "Failed to find the requested resource, sending 404 error\n";
+                }
+                
+                // Add connection header based on client preference
+                if (ConnectionList[Index].Close)
+                {
+                    Res.Headers["Connection"] = "close";
+                    std::cerr << "Response connection set to close\n";
+                }
+                else
+                {
+                    Res.Headers["Connection"] = "keep-alive";
+                    std::cerr << "Response connection set to keep-alive\n";
+                }
+                
+                SendResponse(ConnectionList[Index].Socket.fd, Res);
+                
+                // Check if we should close the connection
+                if (ConnectionList[Index].Close)
+                {
+                    RemoveConnection(Index);
+                    std::cerr << "Closing socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
+                    return;
+                }
+                
+                // Keep-Alive: Reset parser for next request
+                ConnectionList[Index].DataParser.Reset();
+                
+                if (!ConnectionList[Index].Buffer.empty())
+                {
+                    std::cerr << "Buffer still contains data\n";
+                    break; 
+                }
+                else
+                {
+                    std::cerr << "Buffer is fully empty\n";
+                    return; 
+                }
+            }
+            
+            default:
+                Enforce(false, "Unknown parse result encountered");
+                return;
+        }
+    }
 }
 
 HTTP::ParseResult HTTP::Parser::Parse(std::string& Buffer, bool& Close)
@@ -364,13 +396,40 @@ HTTP::ParseResult HTTP::Parser::Parse(std::string& Buffer, bool& Close)
 				}
 			}
 
-			// Try to find the "Content-Length" header if possible before moving onto the next state
+			bool ContainsTEHeader = false;
+			bool ContainsCLHeader = false;
+
+			auto TEIterator = ClientRequest.Headers.find("transfer-encoding");
+			if (TEIterator != ClientRequest.Headers.end())
+			{
+				ContainsTEHeader = true;
+			}
+
 			long long ContentLength = 0;
 			auto LengthIterator = ClientRequest.Headers.find("content-length");
-		
 			if (LengthIterator != ClientRequest.Headers.end())
 			{
-				// Content-Length header found
+				ContainsCLHeader = true;
+			}
+
+			if (ContainsCLHeader && ContainsTEHeader)
+			{
+				return Error;
+			}
+			else if (ContainsTEHeader)
+			{
+				if (TEIterator->second.find("chunked") != std::string::npos)
+				{
+					State = AcceptingBodyChunked;
+					break;							
+				}
+				else
+				{
+					return Error;
+				}
+			}
+			else if (ContainsCLHeader)
+			{
 				try
 				{
 					ContentLength = std::stoll(LengthIterator->second);
@@ -390,7 +449,7 @@ HTTP::ParseResult HTTP::Parser::Parse(std::string& Buffer, bool& Close)
 					std::cerr << "Invalid Content-Length: " << Exception.what() << "\n";
 					return Error;
 				}
-			} 
+			}
 			else
 			{
 				// GET request or header not found
@@ -415,6 +474,61 @@ HTTP::ParseResult HTTP::Parser::Parse(std::string& Buffer, bool& Close)
 			ClientRequest.Body = Buffer.substr(0, ClientRequest.BodyLength);
 			Buffer.erase(0, ClientRequest.BodyLength);
 			return Complete;
+
+			break;
+		}
+		case AcceptingBodyChunked:
+		{
+			while (true)
+			{
+				size_t EndOfSize = Buffer.find("\r\n");
+				if (EndOfSize == std::string::npos) 
+				{
+					return Incomplete; // Haven't received full size indicator yet
+				}
+
+				size_t ChunkSize = 0;
+				std::string Hex = Buffer.substr(0, EndOfSize);
+
+				/* 
+				size_t SemiColonPosition = Hex.find(';');
+				if (SemiColonPosition != std::string::npos) 
+				{
+					Hex = Hex.substr(0, SemiColonPosition);
+				}
+				*/
+				
+				try 
+				{
+					ChunkSize = std::stoull(Hex, nullptr, 16);
+				} 
+				catch (const std::exception& Exception) 
+				{
+					std::cerr << "Invalid transfer encoding size: " << Exception.what() << "\n";
+					return Error; 
+				}
+
+				Buffer.erase(0, EndOfSize + 2);
+				
+				if (ChunkSize == 0) 
+				{
+					if (Buffer.length() >= 2 && Buffer[0] == '\r' && Buffer[1] == '\n') 
+					{
+						Buffer.erase(0, 2);
+						return Complete;
+					}
+
+					return Incomplete; 
+				}
+
+				if (Buffer.length() < ChunkSize + 2) 
+				{
+					return Incomplete; 
+				}
+
+				ClientRequest.Body += Buffer.substr(0, ChunkSize);
+				Buffer.erase(0, ChunkSize + 2);
+			}
 
 			break;
 		}
@@ -511,13 +625,6 @@ HTTP::Response HTTP::ResponseBuilder::Build()
 {
     Res.Headers["Server"] = "PacketPlayground";
 	Res.Headers["Content-Length"] = std::to_string(Res.Body.size());
-
-	// Why RFC? Just why? Why is the default behaviour keep-alive?
-	// Do you WANT to get DoS attacks or something?
-	if (Res.Headers.find("Connection") == Res.Headers.end()) 
-	{
-        Res.Headers["Connection"] = "keep-alive";
-    }
 
     return Res;
 }

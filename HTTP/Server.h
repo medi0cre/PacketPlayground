@@ -12,7 +12,8 @@ namespace HTTP
     {
         Null,
         AcceptingHeaders,
-        AcceptingBody,
+        AcceptingBody, 
+        AcceptingBodyChunked,
         ProcessingRequest,
         Faulty
     };
