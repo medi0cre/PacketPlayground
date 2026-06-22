@@ -3,8 +3,8 @@
 int main()
 {
     HTTP::Server* PPG = new HTTP::Server("127.0.0.1", "8080");
-    
-	PPG->AddRoute("GET", "/", [](const HTTP::Request& Req)
+
+    PPG->AddRoute("GET", "/", [](const HTTP::Request& Req)
     {
         HTTP::ResponseBuilder Builder;
         return Builder
@@ -23,8 +23,8 @@ int main()
             .Body(Req.Body)
             .Build();
     });
-	
-	PPG->Run();
+
+    PPG->Run();
     delete PPG;
     return 0;
 }

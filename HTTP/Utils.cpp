@@ -15,22 +15,22 @@ void Enforce(bool Condition, const char* Message)
     std::abort();
 }
 
-std::vector<std::string> SplitByDelimiter(const std::string& Input, const std::string& Delimiter) 
+std::vector<std::string> SplitByDelimiter(const std::string& Input, const std::string& Delimiter)
 {
     std::vector<std::string> Result{};
     uint64_t Start = 0;
 
-    if (Delimiter.empty()) 
+    if (Delimiter.empty())
     {
         Result.push_back(Input);
         return Result;
     }
 
-    while (true) 
+    while (true)
     {
         uint64_t End = Input.find(Delimiter, Start);
 
-        if (End == std::string::npos) 
+        if (End == std::string::npos)
         {
             Result.emplace_back(Input.substr(Start));
             break;
@@ -46,9 +46,9 @@ std::vector<std::string> SplitByDelimiter(const std::string& Input, const std::s
 std::string Trim(const std::string& String)
 {
     uint64_t First = String.find_first_not_of(" \t\r\n");
-    if (First == std::string::npos) 
-    { 
-        return ""; 
+    if (First == std::string::npos)
+    {
+        return "";
     }
 
     uint64_t Last = String.find_last_not_of(" \t\r\n");
@@ -59,8 +59,8 @@ std::string LowerCase(std::string Str)
 {
     std::transform(Str.begin(), Str.end(), Str.begin(),
     [](unsigned char Character)
-    { 
-        return std::tolower(Character); 
+    {
+        return std::tolower(Character);
     });
 
     return Str;

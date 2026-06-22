@@ -14,11 +14,11 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
     addrinfo Hints{};
     addrinfo* InfoLinkedList = nullptr;
 
-    // TCP sockets because UDP is for people who enjoy 
+    // TCP sockets because UDP is for people who enjoy
     // shooting themselves in the foot with military precision!
     Hints.ai_family = AF_UNSPEC;
     Hints.ai_socktype = SOCK_STREAM;
-    Hints.ai_flags = AI_PASSIVE; 
+    Hints.ai_flags = AI_PASSIVE;
 
     Enforce(getaddrinfo(IPAddress, Port, &Hints, &InfoLinkedList) == 0, "Failed to obtain address info");
 
@@ -61,26 +61,26 @@ void HTTP::Server::Run()
 {
     std::cout << "Launching server. Waiting for new connections...\n";
 
-    while (true) 
+    while (true)
     {
         std::vector<WSAPOLLFD> PollFDList{};
         PollFDList.reserve(ConnectionList.size());
 
         for (int i = 0; i < ConnectionList.size(); i++) { PollFDList.emplace_back(ConnectionList[i].Socket); }
 
-		// Start polling with -1 timeout to poll forever
+        // Start polling with -1 timeout to poll forever
         Enforce(PollFDList.size() == ConnectionList.size(), "Mapping wrong between PollFDList and ConnectionList");
-		Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
+        Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
 
-        for (int ConnectionIndex = ConnectionList.size() - 1; ConnectionIndex >= 0; ConnectionIndex--) 
+        for (int ConnectionIndex = ConnectionList.size() - 1; ConnectionIndex >= 0; ConnectionIndex--)
         {
-            if (PollFDList[ConnectionIndex].revents & (POLLIN | POLLHUP)) 
+            if (PollFDList[ConnectionIndex].revents & (POLLIN | POLLHUP))
             {
                 if (ConnectionIndex == 0)
-				{
-					HandleNewConnection();
-					Enforce(ConnectionList.size() == PollFDList.size() + 1 || ConnectionList.size() == MaxConnections, "Wrong handling of new connection");
-				}
+                {
+                    HandleNewConnection();
+                    Enforce(ConnectionList.size() == PollFDList.size() + 1 || ConnectionList.size() == MaxConnections, "Wrong handling of new connection");
+                }
                 else { HandleClientData(ConnectionIndex); }
             }
         }
@@ -96,21 +96,21 @@ void HTTP::Server::HandleNewConnection()
 
     NewFD = accept(ConnectionList[0].Socket.fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
     if (NewFD == INVALID_SOCKET)
-	{
-		std::cerr << "Invalid file descriptor obtained from accept() call\n";
-		closesocket(NewFD);
-		return;
-	} 
-	
+    {
+        std::cerr << "Invalid file descriptor obtained from accept() call\n";
+        closesocket(NewFD);
+        return;
+    }
+
     if (ConnectionList.size() >= MaxConnections)
     {
-		std::cerr << "No room in poll buffer to add new connection\n";
+        std::cerr << "No room in poll buffer to add new connection\n";
         closesocket(NewFD);
         return;
     }
     else
     {
-		// Add the new socket to the poll
+        // Add the new socket to the poll
         Connection Client{};
         Client.Socket.fd = NewFD;
         Client.Socket.events = POLLIN;
@@ -118,35 +118,35 @@ void HTTP::Server::HandleNewConnection()
         Client.DataParser.State = AcceptingHeaders;
         ConnectionList.emplace_back(Client);
 
-		// Find out the IP address string of the socket
-		sockaddr_in* SA4 = nullptr;
-		sockaddr_in6* SA6 = nullptr;
-		void* Src = nullptr;
+        // Find out the IP address string of the socket
+        sockaddr_in* SA4 = nullptr;
+        sockaddr_in6* SA6 = nullptr;
+        void* Src = nullptr;
 
-		switch (RemoteAddr.ss_family) 
-		{
-		case AF_INET:
+        switch (RemoteAddr.ss_family)
+        {
+        case AF_INET:
         {
             SA4 = reinterpret_cast<sockaddr_in*>(&RemoteAddr);
-			Src = &(SA4->sin_addr);
-			break;
+            Src = &(SA4->sin_addr);
+            break;
         }
-		case AF_INET6:
+        case AF_INET6:
         {
-			SA6 = reinterpret_cast<sockaddr_in6*>(&RemoteAddr);
-			Src = &(SA6->sin6_addr);
-			break;
+            SA6 = reinterpret_cast<sockaddr_in6*>(&RemoteAddr);
+            Src = &(SA6->sin6_addr);
+            break;
         }
-		default:
-			Enforce(false, "Failed to detect either IPV4 or IPV6");
-			break;
-		}
+        default:
+            Enforce(false, "Failed to detect either IPV4 or IPV6");
+            break;
+        }
 
-		Enforce(Src != nullptr, "Src is null");
-		inet_ntop(RemoteAddr.ss_family, Src, RemoteIP, sizeof(RemoteIP));
+        Enforce(Src != nullptr, "Src is null");
+        inet_ntop(RemoteAddr.ss_family, Src, RemoteIP, sizeof(RemoteIP));
 
-		std::cout << "New connection from " << RemoteIP;
-		std::cout << " on socket " << NewFD << "\n";
+        std::cout << "New connection from " << RemoteIP;
+        std::cout << " on socket " << NewFD << "\n";
     }
 }
 
@@ -165,18 +165,18 @@ void HTTP::Server::HandleClientData(int Index)
             std::cerr << "Error receiving message from socket " << ConnectionList[Index].Socket.fd << "\n";
             std::cerr << "Error Code: " << WSAGetLastError() << "\n";
         }
-    
+
         RemoveConnection(Index);
         return;
     }
 
     ConnectionList[Index].Buffer += std::string(Data, NumBytes);
-    
+
     // Process all complete requests in the buffer to handle pipelining
     while (true)
     {
         // Check for suspicious connections
-        if (ConnectionList[Index].Buffer.length() > BufferSize || 
+        if (ConnectionList[Index].Buffer.length() > BufferSize ||
             ConnectionList[Index].DataParser.ClientRequest.Body.length() > BufferSize)
         {
             std::cerr << "Total message size exceeded 32 kibibytes, potential DDoS attack\n";
@@ -187,13 +187,13 @@ void HTTP::Server::HandleClientData(int Index)
 
         ResponseBuilder Builder{};
         ParseResult Result = ConnectionList[Index].DataParser.Parse(
-            ConnectionList[Index].Buffer, 
+            ConnectionList[Index].Buffer,
             ConnectionList[Index].Close);
-        
+
         switch (Result)
         {
             case Incomplete: { return; }
-            
+
             case Error:
             {
                 SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
@@ -201,7 +201,7 @@ void HTTP::Server::HandleClientData(int Index)
                 RemoveConnection(Index);
                 return;
             }
-            
+
             case Complete:
             {
                 Request ClientRequest = ConnectionList[Index].DataParser.ClientRequest;
@@ -209,14 +209,14 @@ void HTTP::Server::HandleClientData(int Index)
                 std::string Version = ClientRequest.Version;
 
                 // Validate HTTP method
-                if (Method != "GET" && Method != "PUT" && Method != "POST" && 
+                if (Method != "GET" && Method != "PUT" && Method != "POST" &&
                     Method != "PATCH" && Method != "DELETE")
                 {
                     SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
                     RemoveConnection(Index);
                     return;
                 }
-                
+
                 // Validate HTTP version
                 if (Version != "HTTP/1.1" && Version != "HTTP/1.0")
                 {
@@ -224,9 +224,9 @@ void HTTP::Server::HandleClientData(int Index)
                     RemoveConnection(Index);
                     return;
                 }
-                
+
                 // HTTP/1.1 requires host header
-                if (Version == "HTTP/1.1" && 
+                if (Version == "HTTP/1.1" &&
                     ClientRequest.Headers.find("host") == ClientRequest.Headers.end())
                 {
                     SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
@@ -237,7 +237,7 @@ void HTTP::Server::HandleClientData(int Index)
                 // Route the request
                 std::string Key = Method + ":" + ClientRequest.URI;
                 auto RouteIterator = Routes.find(Key);
-               
+
                 Response Res{};
                 if (RouteIterator != Routes.end())
                 {
@@ -249,7 +249,7 @@ void HTTP::Server::HandleClientData(int Index)
                     Res = Builder.NotFound().Build();
                     std::cerr << "Failed to find the requested resource, sending 404 error\n";
                 }
-                
+
                 // Add connection header based on client preference
                 if (ConnectionList[Index].Close)
                 {
@@ -261,9 +261,9 @@ void HTTP::Server::HandleClientData(int Index)
                     Res.Headers["Connection"] = "keep-alive";
                     std::cerr << "Response connection set to keep-alive\n";
                 }
-                
+
                 SendResponse(ConnectionList[Index].Socket.fd, Res);
-                
+
                 // Check if we should close the connection
                 if (ConnectionList[Index].Close)
                 {
@@ -271,22 +271,22 @@ void HTTP::Server::HandleClientData(int Index)
                     std::cerr << "Closing socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
                     return;
                 }
-                
+
                 // Keep-Alive: Reset parser for next request
                 ConnectionList[Index].DataParser.Reset();
-                
+
                 if (!ConnectionList[Index].Buffer.empty())
                 {
                     std::cerr << "Buffer still contains data\n";
-                    break; 
+                    break;
                 }
                 else
                 {
                     std::cerr << "Buffer is fully empty\n";
-                    return; 
+                    return;
                 }
             }
-            
+
             default:
                 Enforce(false, "Unknown parse result encountered");
                 return;
@@ -296,179 +296,179 @@ void HTTP::Server::HandleClientData(int Index)
 
 HTTP::ParseResult HTTP::Parser::Parse(std::string& Buffer, bool& Close)
 {
-	while (true)
-	{
-		switch (State)
-		{
-		case AcceptingHeaders:
-		{
-			size_t BlankLinePosition = Buffer.find("\r\n\r\n");
-			if (BlankLinePosition == std::string::npos) { return Incomplete; }
+    while (true)
+    {
+        switch (State)
+        {
+        case AcceptingHeaders:
+        {
+            size_t BlankLinePosition = Buffer.find("\r\n\r\n");
+            if (BlankLinePosition == std::string::npos) { return Incomplete; }
 
-			std::string Head = Buffer.substr(0, BlankLinePosition);
-			Buffer.erase(0, BlankLinePosition + 4);
+            std::string Head = Buffer.substr(0, BlankLinePosition);
+            Buffer.erase(0, BlankLinePosition + 4);
 
-			std::vector<std::string> RequestAndHeaders = SplitByDelimiter(Head, "\r\n");
-			if (RequestAndHeaders.empty()) { return Error; }
-			
-			// Strictly adhere to RFC standards for now, might loosen later
-			if (SpaceCount(RequestAndHeaders[0]) != 2) { return Error; } 
+            std::vector<std::string> RequestAndHeaders = SplitByDelimiter(Head, "\r\n");
+            if (RequestAndHeaders.empty()) { return Error; }
 
-			std::vector<std::string> RequestLine = SplitByDelimiter(RequestAndHeaders[0], " ");
-			if (RequestLine.size() != 3) { return Error; }
+            // Strictly adhere to RFC standards for now, might loosen later
+            if (SpaceCount(RequestAndHeaders[0]) != 2) { return Error; }
 
-			ClientRequest.Method = RequestLine[0];
-			ClientRequest.Version = RequestLine[2];
+            std::vector<std::string> RequestLine = SplitByDelimiter(RequestAndHeaders[0], " ");
+            if (RequestLine.size() != 3) { return Error; }
 
-			size_t QuestionMarkPosition = RequestLine[1].find('?');
-			if (QuestionMarkPosition == std::string::npos) { ClientRequest.URI = RequestLine[1]; }
-			else
-			{
-				ClientRequest.URI = RequestLine[1].substr(0, QuestionMarkPosition);
-				ClientRequest.Query = RequestLine[1].substr(QuestionMarkPosition + 1);
-			}
+            ClientRequest.Method = RequestLine[0];
+            ClientRequest.Version = RequestLine[2];
 
-			for (int i = 1; i < RequestAndHeaders.size(); i++)
-			{
-				size_t ColonPosition = RequestAndHeaders[i].find(':');
-				if (ColonPosition != std::string::npos)
-				{
-					std::string Value = Trim(RequestAndHeaders[i].substr(ColonPosition + 1));
-					std::string Key = RequestAndHeaders[i].substr(0, ColonPosition);
-					ClientRequest.Headers[LowerCase(Key)] = Value;
-					
-					if (WhiteSpaceCount(Key) != 0) { return Error; }
-				}
-				else { return Error; }
-			}
-			
-			auto ConnectionIterator = ClientRequest.Headers.find("connection");
-			if (ConnectionIterator != ClientRequest.Headers.end())
-			{
-				if (ClientRequest.Version == "HTTP/1.0")
-				{
-					Close = true;
-					if (ConnectionIterator->second == "keep-alive") { Close = false; }
-				}
-				else if (ClientRequest.Version == "HTTP/1.1")
-				{
-					Close = false;
-					if (ConnectionIterator->second == "close") { Close = true; }
-				}
-			}
+            size_t QuestionMarkPosition = RequestLine[1].find('?');
+            if (QuestionMarkPosition == std::string::npos) { ClientRequest.URI = RequestLine[1]; }
+            else
+            {
+                ClientRequest.URI = RequestLine[1].substr(0, QuestionMarkPosition);
+                ClientRequest.Query = RequestLine[1].substr(QuestionMarkPosition + 1);
+            }
 
-			bool ContainsTEHeader = false;
-			bool ContainsCLHeader = false;
+            for (int i = 1; i < RequestAndHeaders.size(); i++)
+            {
+                size_t ColonPosition = RequestAndHeaders[i].find(':');
+                if (ColonPosition != std::string::npos)
+                {
+                    std::string Value = Trim(RequestAndHeaders[i].substr(ColonPosition + 1));
+                    std::string Key = RequestAndHeaders[i].substr(0, ColonPosition);
+                    ClientRequest.Headers[LowerCase(Key)] = Value;
 
-			auto TEIterator = ClientRequest.Headers.find("transfer-encoding");
-			if (TEIterator != ClientRequest.Headers.end()) { ContainsTEHeader = true; }
+                    if (WhiteSpaceCount(Key) != 0) { return Error; }
+                }
+                else { return Error; }
+            }
 
-			long long ContentLength = 0;
-			auto LengthIterator = ClientRequest.Headers.find("content-length");
+            auto ConnectionIterator = ClientRequest.Headers.find("connection");
+            if (ConnectionIterator != ClientRequest.Headers.end())
+            {
+                if (ClientRequest.Version == "HTTP/1.0")
+                {
+                    Close = true;
+                    if (ConnectionIterator->second == "keep-alive") { Close = false; }
+                }
+                else if (ClientRequest.Version == "HTTP/1.1")
+                {
+                    Close = false;
+                    if (ConnectionIterator->second == "close") { Close = true; }
+                }
+            }
 
-			if (LengthIterator != ClientRequest.Headers.end()) { ContainsCLHeader = true; }
-			if (ContainsCLHeader && ContainsTEHeader) { return Error; }
-			
+            bool ContainsTEHeader = false;
+            bool ContainsCLHeader = false;
+
+            auto TEIterator = ClientRequest.Headers.find("transfer-encoding");
+            if (TEIterator != ClientRequest.Headers.end()) { ContainsTEHeader = true; }
+
+            long long ContentLength = 0;
+            auto LengthIterator = ClientRequest.Headers.find("content-length");
+
+            if (LengthIterator != ClientRequest.Headers.end()) { ContainsCLHeader = true; }
+            if (ContainsCLHeader && ContainsTEHeader) { return Error; }
+
             else if (ContainsTEHeader)
-			{
-				if (TEIterator->second.find("chunked") != std::string::npos)
-				{
-					State = AcceptingBodyChunked;
-					break;							
-				}
-				else { return Error; }
-			}
-			else if (ContainsCLHeader)
-			{
-				try
-				{
-					ContentLength = std::stoll(LengthIterator->second);
-					if (ContentLength < 0) { return Error; }
-					else
-					{
-						ClientRequest.BodyLength = ContentLength;
-						State = AcceptingBody;
-						break;
-					}
-				}
-				catch (const std::exception& Exception)
-				{
-					std::cerr << "Invalid Content-Length: " << Exception.what() << "\n";
-					return Error;
-				}
-			}
-			else { return Complete; }
-			
-			break;
-		}
-		case AcceptingBody:
-		{
-			if (ClientRequest.BodyLength == 0) { return Complete; }
-			if (ClientRequest.BodyLength > Buffer.length()) { return Incomplete; }
+            {
+                if (TEIterator->second.find("chunked") != std::string::npos)
+                {
+                    State = AcceptingBodyChunked;
+                    break;
+                }
+                else { return Error; }
+            }
+            else if (ContainsCLHeader)
+            {
+                try
+                {
+                    ContentLength = std::stoll(LengthIterator->second);
+                    if (ContentLength < 0) { return Error; }
+                    else
+                    {
+                        ClientRequest.BodyLength = ContentLength;
+                        State = AcceptingBody;
+                        break;
+                    }
+                }
+                catch (const std::exception& Exception)
+                {
+                    std::cerr << "Invalid Content-Length: " << Exception.what() << "\n";
+                    return Error;
+                }
+            }
+            else { return Complete; }
 
-			// Body data fully received
-			ClientRequest.Body = Buffer.substr(0, ClientRequest.BodyLength);
-			Buffer.erase(0, ClientRequest.BodyLength);
-			return Complete;
+            break;
+        }
+        case AcceptingBody:
+        {
+            if (ClientRequest.BodyLength == 0) { return Complete; }
+            if (ClientRequest.BodyLength > Buffer.length()) { return Incomplete; }
 
-			break;
-		}
-		case AcceptingBodyChunked:
-		{
-			while (true)
-			{
-				size_t EndOfSize = Buffer.find("\r\n");
-				if (EndOfSize == std::string::npos) { return Incomplete; }
+            // Body data fully received
+            ClientRequest.Body = Buffer.substr(0, ClientRequest.BodyLength);
+            Buffer.erase(0, ClientRequest.BodyLength);
+            return Complete;
 
-				size_t ChunkSize = 0;
-				std::string Hex = Buffer.substr(0, EndOfSize);
+            break;
+        }
+        case AcceptingBodyChunked:
+        {
+            while (true)
+            {
+                size_t EndOfSize = Buffer.find("\r\n");
+                if (EndOfSize == std::string::npos) { return Incomplete; }
 
-				/* 
-				size_t SemiColonPosition = Hex.find(';');
-				if (SemiColonPosition != std::string::npos) 
-				{
-					Hex = Hex.substr(0, SemiColonPosition);
-				}
-				*/
-				
-				try { ChunkSize = std::stoull(Hex, nullptr, 16); }
-				catch (const std::exception& Exception) 
-				{
-					std::cerr << "Invalid transfer encoding size: " << Exception.what() << "\n";
-					return Error; 
-				}
+                size_t ChunkSize = 0;
+                std::string Hex = Buffer.substr(0, EndOfSize);
 
-				Buffer.erase(0, EndOfSize + 2);
-				
-				if (ChunkSize == 0) 
-				{
-					if (Buffer.length() >= 2 && Buffer[0] == '\r' && Buffer[1] == '\n') 
-					{
-						Buffer.erase(0, 2);
-						return Complete;
-					}
+                /*
+                size_t SemiColonPosition = Hex.find(';');
+                if (SemiColonPosition != std::string::npos)
+                {
+                    Hex = Hex.substr(0, SemiColonPosition);
+                }
+                */
 
-					return Incomplete; 
-				}
+                try { ChunkSize = std::stoull(Hex, nullptr, 16); }
+                catch (const std::exception& Exception)
+                {
+                    std::cerr << "Invalid transfer encoding size: " << Exception.what() << "\n";
+                    return Error;
+                }
 
-				if (Buffer.length() < ChunkSize + 2) { return Incomplete; }
+                Buffer.erase(0, EndOfSize + 2);
 
-				ClientRequest.Body += Buffer.substr(0, ChunkSize);
-				Buffer.erase(0, ChunkSize + 2);
-			}
+                if (ChunkSize == 0)
+                {
+                    if (Buffer.length() >= 2 && Buffer[0] == '\r' && Buffer[1] == '\n')
+                    {
+                        Buffer.erase(0, 2);
+                        return Complete;
+                    }
 
-			break;
-		}
-		default:
-			Enforce(false, "Invalid parsing state encountered");
-			break;
-		}
-	}
+                    return Incomplete;
+                }
+
+                if (Buffer.length() < ChunkSize + 2) { return Incomplete; }
+
+                ClientRequest.Body += Buffer.substr(0, ChunkSize);
+                Buffer.erase(0, ChunkSize + 2);
+            }
+
+            break;
+        }
+        default:
+            Enforce(false, "Invalid parsing state encountered");
+            break;
+        }
+    }
 }
 
 void HTTP::Parser::Reset()
 {
-	State = AcceptingHeaders;
+    State = AcceptingHeaders;
     ClientRequest = {};
 }
 
@@ -476,7 +476,7 @@ std::string HTTP::Server::CPPString(const Response& Res)
 {
     std::string Result = "";
     Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
-    
+
     for (const auto& Header: Res.Headers) { Result += Header.first + ": " + Header.second + "\r\n"; }
 
     Result += "\r\n" + Res.Body;
@@ -486,11 +486,11 @@ std::string HTTP::Server::CPPString(const Response& Res)
 void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 {
     std::string ResponseString = CPPString(Res);
-	Enforce(ResponseString.size() != 0, "Response should NEVER be empty");
+    Enforce(ResponseString.size() != 0, "Response should NEVER be empty");
 
     size_t TotalSent = 0;
     size_t Remaining = ResponseString.size();
-    
+
     while (Remaining > 0)
     {
         int Sent = send(ClientFD, ResponseString.c_str() + TotalSent, Remaining, 0);
@@ -499,33 +499,33 @@ void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
             std::cerr << "Failed to send response: " << WSAGetLastError() << "\n";
             return;
         }
-		
+
         TotalSent += Sent;
         Remaining -= Sent;
     }
 
-	Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response should always be fully sent unless there is a bug");
+    Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response should always be fully sent unless there is a bug");
 }
 
 void HTTP::Server::RemoveConnection(int Index)
 {
-	closesocket(ConnectionList[Index].Socket.fd);
-	ConnectionList.erase(ConnectionList.begin() + Index);
+    closesocket(ConnectionList[Index].Socket.fd);
+    ConnectionList.erase(ConnectionList.begin() + Index);
 }
 
 void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
 {
-	if (Path.size() == 0)
-	{
-		std::cerr << "Empty path provided, failed to add route\n";
-		return;
-	}
+    if (Path.size() == 0)
+    {
+        std::cerr << "Empty path provided, failed to add route\n";
+        return;
+    }
 
-	if (Method != "GET" && Method != "POST" && Method != "PATCH" && Method != "PUT" && Method != "DELETE")
-	{
-		std::cerr << "Invalid method provided, failed to add route\n";
-		std::cerr << "Please check whether all methods are uppercase and valid, e.g. GET, POST, PATCH\n";
-	}
+    if (Method != "GET" && Method != "POST" && Method != "PATCH" && Method != "PUT" && Method != "DELETE")
+    {
+        std::cerr << "Invalid method provided, failed to add route\n";
+        std::cerr << "Please check whether all methods are uppercase and valid, e.g. GET, POST, PATCH\n";
+    }
 
     std::string Key = Method + ":" + Path;
     Routes[Key] = Dispatcher;
@@ -534,10 +534,10 @@ void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::fu
 
 HTTP::Server::~Server()
 {
-	for (int i = 0; i < ConnectionList.size(); i++)
-	{
-		if (ConnectionList[i].Socket.fd != INVALID_SOCKET) { closesocket(ConnectionList[i].Socket.fd); }
-	}
+    for (int i = 0; i < ConnectionList.size(); i++)
+    {
+        if (ConnectionList[i].Socket.fd != INVALID_SOCKET) { closesocket(ConnectionList[i].Socket.fd); }
+    }
 
     WSACleanup();
 }
@@ -545,45 +545,45 @@ HTTP::Server::~Server()
 HTTP::Response HTTP::ResponseBuilder::Build()
 {
     Res.Headers["Server"] = "PacketPlayground";
-	Res.Headers["Content-Length"] = std::to_string(Res.Body.size());
+    Res.Headers["Content-Length"] = std::to_string(Res.Body.size());
 
     return Res;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::Reset()
 {
-	Res = {};
-	return *this;
+    Res = {};
+    return *this;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::Version(const std::string& Version)
 {
-	Res.Version = Version;
-	return *this;
-} 
+    Res.Version = Version;
+    return *this;
+}
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::StatusCode(int StatusCode)
 {
-	Res.StatusCode = StatusCode;
-	return *this;
+    Res.StatusCode = StatusCode;
+    return *this;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::Status(const std::string& Status)
 {
-	Res.Status = Status;
-	return *this;
+    Res.Status = Status;
+    return *this;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::Body(const std::string& Body)
 {
-	Res.Body = Body;
-	return *this;
+    Res.Body = Body;
+    return *this;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::Header(const std::string& Key, const std::string& Value)
 {
-	Res.Headers[Key] = Value;
-	return *this;
+    Res.Headers[Key] = Value;
+    return *this;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::NotFound()
@@ -596,16 +596,16 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::NotFound()
                                        "</body>"
                                      "</html>";
 
-	
-	Reset();
-	Version("HTTP/1.1");
-	StatusCode(404);
-	Status("Not Found");
-	HTML();
-	Header("Connection", "close");
-	Body(NotFoundBody);
 
-	return *this;
+    Reset();
+    Version("HTTP/1.1");
+    StatusCode(404);
+    Status("Not Found");
+    HTML();
+    Header("Connection", "close");
+    Body(NotFoundBody);
+
+    return *this;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::BadRequest()
@@ -618,36 +618,36 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::BadRequest()
                                          "</body>"
                                        "</html>";
 
-	
-	Reset();
-	Version("HTTP/1.1");
-	StatusCode(400);
-	Status("Bad Request");
-	HTML();
-	Header("Connection", "close");
-	Body(BadRequestBody);
 
-	return *this;
+    Reset();
+    Version("HTTP/1.1");
+    StatusCode(400);
+    Status("Bad Request");
+    HTML();
+    Header("Connection", "close");
+    Body(BadRequestBody);
+
+    return *this;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::OK()
 {
-	Reset();
-	Version("HTTP/1.1");
+    Reset();
+    Version("HTTP/1.1");
     StatusCode(200);
     Status("OK");
-	
-	return *this;
+
+    return *this;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::JSON()
 {
     Header("Content-Type", "application/json");
-	return *this;
+    return *this;
 }
 
 HTTP::ResponseBuilder& HTTP::ResponseBuilder::HTML()
 {
     Header("Content-Type", "text/html");
-	return *this;
+    return *this;
 }

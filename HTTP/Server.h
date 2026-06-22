@@ -12,12 +12,12 @@ namespace HTTP
     {
         Null,
         AcceptingHeaders,
-        AcceptingBody, 
+        AcceptingBody,
         AcceptingBodyChunked,
         ProcessingRequest,
         Faulty
     };
-   
+
     enum ParseResult
     {
         Error,
@@ -32,10 +32,10 @@ namespace HTTP
         std::string Query = "";
         std::string Version = "";
         std::unordered_map<std::string, std::string> Headers{};
-        std::string Body = ""; 
+        std::string Body = "";
         size_t BodyLength = 0;
     };
-	
+
     struct Response
     {
         int StatusCode = 0;
@@ -44,30 +44,30 @@ namespace HTTP
         std::unordered_map<std::string, std::string> Headers{};
         std::string Body = "";
     };
- 
+
     class ResponseBuilder
     {
-	private:
-	    Response Res{};
+    private:
+        Response Res{};
 
-	public:
-	    ResponseBuilder() = default;
-	    ~ResponseBuilder() = default;
-		
+    public:
+        ResponseBuilder() = default;
+        ~ResponseBuilder() = default;
+
         Response Build();
-	    ResponseBuilder& Reset();
-        ResponseBuilder& Version(const std::string& Version); 
-	    ResponseBuilder& StatusCode(int StatusCode);
-	    ResponseBuilder& Status(const std::string& Status);
-	    ResponseBuilder& Body(const std::string& Body);
-	    ResponseBuilder& Header(const std::string& Key, const std::string& Value);
-		
-        ResponseBuilder& NotFound();
-		ResponseBuilder& BadRequest();
+        ResponseBuilder& Reset();
+        ResponseBuilder& Version(const std::string& Version);
+        ResponseBuilder& StatusCode(int StatusCode);
+        ResponseBuilder& Status(const std::string& Status);
+        ResponseBuilder& Body(const std::string& Body);
+        ResponseBuilder& Header(const std::string& Key, const std::string& Value);
 
-		ResponseBuilder& OK();
-		ResponseBuilder& JSON();
-		ResponseBuilder& HTML();
+        ResponseBuilder& NotFound();
+        ResponseBuilder& BadRequest();
+
+        ResponseBuilder& OK();
+        ResponseBuilder& JSON();
+        ResponseBuilder& HTML();
     };
 
     class Parser
@@ -95,18 +95,18 @@ namespace HTTP
         static constexpr int BufferSize = 32768;
 
         std::vector<Connection> ConnectionList{};
-	    std::unordered_map<std::string, std::function<Response(const Request&)>> Routes{};
+        std::unordered_map<std::string, std::function<Response(const Request&)>> Routes{};
 
-	    void HandleNewConnection();
-	    void HandleClientData(int Index);
-	    void SendResponse(SOCKET ClientFD, const Response& Res);
+        void HandleNewConnection();
+        void HandleClientData(int Index);
+        void SendResponse(SOCKET ClientFD, const Response& Res);
         void RemoveConnection(int Index);
         std::string CPPString(const Response& Res);
 
     public:
         Server(const char* IPAddress, const char* Port);
         ~Server();
-	    void Run();
-	    void AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher);
+        void Run();
+        void AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher);
     };
 }
