@@ -1,7 +1,7 @@
 #include <iostream>
 
-#include "Utils.h"
-#include "Server.h"
+#include <Utils.h>
+#include <Server.h>
 
 HTTP::Server::Server(const char* IPAddress, const char* Port)
 {
