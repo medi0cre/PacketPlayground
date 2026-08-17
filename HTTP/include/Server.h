@@ -5,37 +5,13 @@
 #include <functional>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <Parser.h>
+
+#define MaxConnections 32
+#define BufferSize 32768
 
 namespace HTTP
 {
-    enum ParseState
-    {
-        Null,
-        AcceptingHeaders,
-        AcceptingBody,
-        AcceptingBodyChunked,
-        ProcessingRequest,
-        Faulty
-    };
-
-    enum ParseResult
-    {
-        Error,
-        Incomplete,
-        Complete
-    };
-
-    struct Request
-    {
-        std::string Method = "";
-        std::string URI = "";
-        std::string Query = "";
-        std::string Version = "";
-        std::unordered_map<std::string, std::string> Headers{};
-        std::string Body = "";
-        size_t BodyLength = 0;
-    };
-
     struct Response
     {
         int StatusCode = 0;
@@ -45,63 +21,24 @@ namespace HTTP
         std::string Body = "";
     };
 
-    class ResponseBuilder
-    {
-    private:
-        Response Res{};
-
-    public:
-        ResponseBuilder() = default;
-        ~ResponseBuilder() = default;
-
-        Response Build();
-        ResponseBuilder& Reset();
-        ResponseBuilder& Version(const std::string& Version);
-        ResponseBuilder& StatusCode(int StatusCode);
-        ResponseBuilder& Status(const std::string& Status);
-        ResponseBuilder& Body(const std::string& Body);
-        ResponseBuilder& Header(const std::string& Key, const std::string& Value);
-
-        ResponseBuilder& NotFound();
-        ResponseBuilder& BadRequest();
-
-        ResponseBuilder& OK();
-        ResponseBuilder& JSON();
-        ResponseBuilder& HTML();
-    };
-
-    class Parser
-    {
-    public:
-        ParseState State = Null;
-        Request ClientRequest{};
-
-        ParseResult Parse(std::string& Buffer, bool& Close);
-        void Reset();
-    };
-
     struct Connection
     {
-        std::string Buffer = "";
         WSAPOLLFD Socket{};
-        Parser DataParser{};
-        bool Close = false;
+        Parser Par{};
     };
 
     class Server
     {
     private:
-        static constexpr int MaxConnections = 32;
-        static constexpr int BufferSize = 32768;
-
         std::vector<Connection> ConnectionList{};
         std::unordered_map<std::string, std::function<Response(const Request&)>> Routes{};
 
+        std::string Stringify(const Response& Res);
         void HandleNewConnection();
         void HandleClientData(int Index);
         void SendResponse(SOCKET ClientFD, const Response& Res);
         void RemoveConnection(int Index);
-        std::string CPPString(const Response& Res);
+        void ProcessRequest(int Index, const Request& Req);
 
     public:
         Server(const char* IPAddress, const char* Port);

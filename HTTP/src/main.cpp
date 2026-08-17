@@ -1,7 +1,10 @@
 #include <Server.h>
+#include <Test.h>
+#include <ResponseBuilder.h>
 
 int main()
 {
+    RunTests();
     HTTP::Server* PPG = new HTTP::Server("127.0.0.1", "8080");
 
     PPG->AddRoute("GET", "/", [](const HTTP::Request& Req)

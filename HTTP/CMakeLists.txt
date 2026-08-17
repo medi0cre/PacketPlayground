@@ -8,6 +8,9 @@ add_executable(PPG
     src/main.cpp
     src/Server.cpp
     src/Utils.cpp
+    src/Parser.cpp
+    src/ResponseBuilder.cpp
+    src/Test.cpp
 )
 
 target_include_directories(PPG PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

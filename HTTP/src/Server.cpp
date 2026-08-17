@@ -1,7 +1,7 @@
 #include <iostream>
-
 #include <Utils.h>
 #include <Server.h>
+#include <ResponseBuilder.h>
 
 HTTP::Server::Server(const char* IPAddress, const char* Port)
 {
@@ -108,46 +108,44 @@ void HTTP::Server::HandleNewConnection()
         closesocket(NewFD);
         return;
     }
-    else
+
+    // Add the new socket to the poll
+    Connection Client{};
+    Client.Socket.fd = NewFD;
+    Client.Socket.events = POLLIN;
+    Client.Socket.revents = 0;
+    Client.Par.State = ParseState::RequestLineStart;
+    ConnectionList.emplace_back(Client);
+
+    // Find out the IP address string of the socket
+    sockaddr_in* SA4 = nullptr;
+    sockaddr_in6* SA6 = nullptr;
+    void* Src = nullptr;
+
+    switch (RemoteAddr.ss_family)
     {
-        // Add the new socket to the poll
-        Connection Client{};
-        Client.Socket.fd = NewFD;
-        Client.Socket.events = POLLIN;
-        Client.Socket.revents = 0;
-        Client.DataParser.State = AcceptingHeaders;
-        ConnectionList.emplace_back(Client);
-
-        // Find out the IP address string of the socket
-        sockaddr_in* SA4 = nullptr;
-        sockaddr_in6* SA6 = nullptr;
-        void* Src = nullptr;
-
-        switch (RemoteAddr.ss_family)
-        {
-        case AF_INET:
-        {
-            SA4 = reinterpret_cast<sockaddr_in*>(&RemoteAddr);
-            Src = &(SA4->sin_addr);
-            break;
-        }
-        case AF_INET6:
-        {
-            SA6 = reinterpret_cast<sockaddr_in6*>(&RemoteAddr);
-            Src = &(SA6->sin6_addr);
-            break;
-        }
-        default:
-            Enforce(false, "Failed to detect either IPV4 or IPV6");
-            break;
-        }
-
-        Enforce(Src != nullptr, "Src is null");
-        inet_ntop(RemoteAddr.ss_family, Src, RemoteIP, sizeof(RemoteIP));
-
-        std::cout << "New connection from " << RemoteIP;
-        std::cout << " on socket " << NewFD << "\n";
+    case AF_INET:
+    {
+        SA4 = reinterpret_cast<sockaddr_in*>(&RemoteAddr);
+        Src = &(SA4->sin_addr);
+        break;
     }
+    case AF_INET6:
+    {
+        SA6 = reinterpret_cast<sockaddr_in6*>(&RemoteAddr);
+        Src = &(SA6->sin6_addr);
+        break;
+    }
+    default:
+        Enforce(false, "Failed to detect either IPV4 or IPV6");
+        break;
+    }
+
+    Enforce(Src != nullptr, "Src is null");
+    inet_ntop(RemoteAddr.ss_family, Src, RemoteIP, sizeof(RemoteIP));
+
+    std::cout << "New connection from " << RemoteIP;
+    std::cout << " on socket " << NewFD << "\n";
 }
 
 void HTTP::Server::HandleClientData(int Index)
@@ -170,309 +168,40 @@ void HTTP::Server::HandleClientData(int Index)
         return;
     }
 
-    ConnectionList[Index].Buffer += std::string(Data, NumBytes);
-
-    // Process all complete requests in the buffer to handle pipelining
-    while (true)
+    int Result = ConnectionList[Index].Par.Parse(std::string(Data, NumBytes), NumBytes);
+    if (Result < 0)
     {
-        // Check for suspicious connections
-        if (ConnectionList[Index].Buffer.length() > BufferSize ||
-            ConnectionList[Index].DataParser.ClientRequest.Body.length() > BufferSize)
+        // Error: Send bad request and dip
+        ResponseBuilder Builder{};
+        Response Res = Builder.BadRequest().Build();
+        SendResponse(ConnectionList[Index].Socket.fd, Res);
+        RemoveConnection(Index);
+        return;
+    }
+
+    if (ConnectionList[Index].Par.Req.IsComplete)
+    {
+        Parser& Par = ConnectionList[Index].Par;
+        ProcessRequest(Index, Par.Req);
+        std::string ConnectionHeader = LowerCase(Par.Req.Headers["connection"]);
+        Enforce(ConnectionHeader == "keep-alive" || ConnectionHeader == "close", "Invalid connection header");
+
+        if (Par.Req.Version == "HTTP/1.0" && ConnectionHeader != "keep-alive")
         {
-            std::cerr << "Total message size exceeded 32 kibibytes, potential DDoS attack\n";
-            std::cerr << "Removing malicious socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
+            RemoveConnection(Index);
+            return;
+        }
+        else if (ConnectionHeader == "close")
+        {
             RemoveConnection(Index);
             return;
         }
 
-        ResponseBuilder Builder{};
-        ParseResult Result = ConnectionList[Index].DataParser.Parse(
-            ConnectionList[Index].Buffer,
-            ConnectionList[Index].Close);
-
-        switch (Result)
-        {
-            case Incomplete: { return; }
-
-            case Error:
-            {
-                SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-                std::cerr << "Faulty connection at socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
-                RemoveConnection(Index);
-                return;
-            }
-
-            case Complete:
-            {
-                Request ClientRequest = ConnectionList[Index].DataParser.ClientRequest;
-                std::string Method = ClientRequest.Method;
-                std::string Version = ClientRequest.Version;
-
-                // Validate HTTP method
-                if (Method != "GET" && Method != "PUT" && Method != "POST" &&
-                    Method != "PATCH" && Method != "DELETE")
-                {
-                    SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-                    RemoveConnection(Index);
-                    return;
-                }
-
-                // Validate HTTP version
-                if (Version != "HTTP/1.1" && Version != "HTTP/1.0")
-                {
-                    SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-                    RemoveConnection(Index);
-                    return;
-                }
-
-                // HTTP/1.1 requires host header
-                if (Version == "HTTP/1.1" &&
-                    ClientRequest.Headers.find("host") == ClientRequest.Headers.end())
-                {
-                    SendResponse(ConnectionList[Index].Socket.fd, Builder.BadRequest().Build());
-                    RemoveConnection(Index);
-                    return;
-                }
-
-                // Route the request
-                std::string Key = Method + ":" + ClientRequest.URI;
-                auto RouteIterator = Routes.find(Key);
-
-                Response Res{};
-                if (RouteIterator != Routes.end())
-                {
-                    Res = RouteIterator->second(ClientRequest);
-                    std::cerr << "Found the requested route, sending response\n";
-                }
-                else
-                {
-                    Res = Builder.NotFound().Build();
-                    std::cerr << "Failed to find the requested resource, sending 404 error\n";
-                }
-
-                // Add connection header based on client preference
-                if (ConnectionList[Index].Close)
-                {
-                    Res.Headers["Connection"] = "close";
-                    std::cerr << "Response connection set to close\n";
-                }
-                else
-                {
-                    Res.Headers["Connection"] = "keep-alive";
-                    std::cerr << "Response connection set to keep-alive\n";
-                }
-
-                SendResponse(ConnectionList[Index].Socket.fd, Res);
-
-                // Check if we should close the connection
-                if (ConnectionList[Index].Close)
-                {
-                    RemoveConnection(Index);
-                    std::cerr << "Closing socket " << std::to_string(ConnectionList[Index].Socket.fd) << "\n";
-                    return;
-                }
-
-                // Keep-Alive: Reset parser for next request
-                ConnectionList[Index].DataParser.Reset();
-
-                if (!ConnectionList[Index].Buffer.empty())
-                {
-                    std::cerr << "Buffer still contains data\n";
-                    break;
-                }
-                else
-                {
-                    std::cerr << "Buffer is fully empty\n";
-                    return;
-                }
-            }
-
-            default:
-                Enforce(false, "Unknown parse result encountered");
-                return;
-        }
+        Par.Reset();
     }
 }
 
-HTTP::ParseResult HTTP::Parser::Parse(std::string& Buffer, bool& Close)
-{
-    while (true)
-    {
-        switch (State)
-        {
-        case AcceptingHeaders:
-        {
-            size_t BlankLinePosition = Buffer.find("\r\n\r\n");
-            if (BlankLinePosition == std::string::npos) { return Incomplete; }
-
-            std::string Head = Buffer.substr(0, BlankLinePosition);
-            Buffer.erase(0, BlankLinePosition + 4);
-
-            std::vector<std::string> RequestAndHeaders = SplitByDelimiter(Head, "\r\n");
-            if (RequestAndHeaders.empty()) { return Error; }
-
-            // Strictly adhere to RFC standards for now, might loosen later
-            if (SpaceCount(RequestAndHeaders[0]) != 2) { return Error; }
-
-            std::vector<std::string> RequestLine = SplitByDelimiter(RequestAndHeaders[0], " ");
-            if (RequestLine.size() != 3) { return Error; }
-
-            ClientRequest.Method = RequestLine[0];
-            ClientRequest.Version = RequestLine[2];
-
-            size_t QuestionMarkPosition = RequestLine[1].find('?');
-            if (QuestionMarkPosition == std::string::npos) { ClientRequest.URI = RequestLine[1]; }
-            else
-            {
-                ClientRequest.URI = RequestLine[1].substr(0, QuestionMarkPosition);
-                ClientRequest.Query = RequestLine[1].substr(QuestionMarkPosition + 1);
-            }
-
-            for (int i = 1; i < RequestAndHeaders.size(); i++)
-            {
-                size_t ColonPosition = RequestAndHeaders[i].find(':');
-                if (ColonPosition != std::string::npos)
-                {
-                    std::string Value = Trim(RequestAndHeaders[i].substr(ColonPosition + 1));
-                    std::string Key = RequestAndHeaders[i].substr(0, ColonPosition);
-                    ClientRequest.Headers[LowerCase(Key)] = Value;
-
-                    if (WhiteSpaceCount(Key) != 0) { return Error; }
-                }
-                else { return Error; }
-            }
-
-            auto ConnectionIterator = ClientRequest.Headers.find("connection");
-            if (ConnectionIterator != ClientRequest.Headers.end())
-            {
-                if (ClientRequest.Version == "HTTP/1.0")
-                {
-                    Close = true;
-                    if (ConnectionIterator->second == "keep-alive") { Close = false; }
-                }
-                else if (ClientRequest.Version == "HTTP/1.1")
-                {
-                    Close = false;
-                    if (ConnectionIterator->second == "close") { Close = true; }
-                }
-            }
-
-            bool ContainsTEHeader = false;
-            bool ContainsCLHeader = false;
-
-            auto TEIterator = ClientRequest.Headers.find("transfer-encoding");
-            if (TEIterator != ClientRequest.Headers.end()) { ContainsTEHeader = true; }
-
-            long long ContentLength = 0;
-            auto LengthIterator = ClientRequest.Headers.find("content-length");
-
-            if (LengthIterator != ClientRequest.Headers.end()) { ContainsCLHeader = true; }
-            if (ContainsCLHeader && ContainsTEHeader) { return Error; }
-
-            else if (ContainsTEHeader)
-            {
-                if (TEIterator->second.find("chunked") != std::string::npos)
-                {
-                    State = AcceptingBodyChunked;
-                    break;
-                }
-                else { return Error; }
-            }
-            else if (ContainsCLHeader)
-            {
-                try
-                {
-                    ContentLength = std::stoll(LengthIterator->second);
-                    if (ContentLength < 0) { return Error; }
-                    else
-                    {
-                        ClientRequest.BodyLength = ContentLength;
-                        State = AcceptingBody;
-                        break;
-                    }
-                }
-                catch (const std::exception& Exception)
-                {
-                    std::cerr << "Invalid Content-Length: " << Exception.what() << "\n";
-                    return Error;
-                }
-            }
-            else { return Complete; }
-
-            break;
-        }
-        case AcceptingBody:
-        {
-            if (ClientRequest.BodyLength == 0) { return Complete; }
-            if (ClientRequest.BodyLength > Buffer.length()) { return Incomplete; }
-
-            // Body data fully received
-            ClientRequest.Body = Buffer.substr(0, ClientRequest.BodyLength);
-            Buffer.erase(0, ClientRequest.BodyLength);
-            return Complete;
-
-            break;
-        }
-        case AcceptingBodyChunked:
-        {
-            while (true)
-            {
-                size_t EndOfSize = Buffer.find("\r\n");
-                if (EndOfSize == std::string::npos) { return Incomplete; }
-
-                size_t ChunkSize = 0;
-                std::string Hex = Buffer.substr(0, EndOfSize);
-
-                /*
-                size_t SemiColonPosition = Hex.find(';');
-                if (SemiColonPosition != std::string::npos)
-                {
-                    Hex = Hex.substr(0, SemiColonPosition);
-                }
-                */
-
-                try { ChunkSize = std::stoull(Hex, nullptr, 16); }
-                catch (const std::exception& Exception)
-                {
-                    std::cerr << "Invalid transfer encoding size: " << Exception.what() << "\n";
-                    return Error;
-                }
-
-                Buffer.erase(0, EndOfSize + 2);
-
-                if (ChunkSize == 0)
-                {
-                    if (Buffer.length() >= 2 && Buffer[0] == '\r' && Buffer[1] == '\n')
-                    {
-                        Buffer.erase(0, 2);
-                        return Complete;
-                    }
-
-                    return Incomplete;
-                }
-
-                if (Buffer.length() < ChunkSize + 2) { return Incomplete; }
-
-                ClientRequest.Body += Buffer.substr(0, ChunkSize);
-                Buffer.erase(0, ChunkSize + 2);
-            }
-
-            break;
-        }
-        default:
-            Enforce(false, "Invalid parsing state encountered");
-            break;
-        }
-    }
-}
-
-void HTTP::Parser::Reset()
-{
-    State = AcceptingHeaders;
-    ClientRequest = {};
-}
-
-std::string HTTP::Server::CPPString(const Response& Res)
+std::string HTTP::Server::Stringify(const Response& Res)
 {
     std::string Result = "";
     Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
@@ -483,9 +212,14 @@ std::string HTTP::Server::CPPString(const Response& Res)
     return Result;
 }
 
+void HTTP::Server::ProcessRequest(int Index, const Request& Req)
+{
+    // TODO Implement this later
+}
+
 void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 {
-    std::string ResponseString = CPPString(Res);
+    std::string ResponseString = Stringify(Res);
     Enforce(ResponseString.size() != 0, "Response should NEVER be empty");
 
     size_t TotalSent = 0;
@@ -540,114 +274,4 @@ HTTP::Server::~Server()
     }
 
     WSACleanup();
-}
-
-HTTP::Response HTTP::ResponseBuilder::Build()
-{
-    Res.Headers["Server"] = "PacketPlayground";
-    Res.Headers["Content-Length"] = std::to_string(Res.Body.size());
-
-    return Res;
-}
-
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::Reset()
-{
-    Res = {};
-    return *this;
-}
-
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::Version(const std::string& Version)
-{
-    Res.Version = Version;
-    return *this;
-}
-
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::StatusCode(int StatusCode)
-{
-    Res.StatusCode = StatusCode;
-    return *this;
-}
-
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::Status(const std::string& Status)
-{
-    Res.Status = Status;
-    return *this;
-}
-
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::Body(const std::string& Body)
-{
-    Res.Body = Body;
-    return *this;
-}
-
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::Header(const std::string& Key, const std::string& Value)
-{
-    Res.Headers[Key] = Value;
-    return *this;
-}
-
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::NotFound()
-{
-    const std::string NotFoundBody = "<html>"
-                                       "<head><title>404 Not Found</title></head>"
-                                       "<body>"
-                                         "<h1>404 Not Found</h1>"
-                                         "<p>The requested resource was not found on this server.</p>"
-                                       "</body>"
-                                     "</html>";
-
-
-    Reset();
-    Version("HTTP/1.1");
-    StatusCode(404);
-    Status("Not Found");
-    HTML();
-    Header("Connection", "close");
-    Body(NotFoundBody);
-
-    return *this;
-}
-
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::BadRequest()
-{
-    const std::string BadRequestBody = "<html>"
-                                         "<head><title>400 Bad Request</title></head>"
-                                         "<body>"
-                                           "<h1>400 Bad Request</h1>"
-                                           "<p>Your browser sent a request that the server could not understand</p>"
-                                         "</body>"
-                                       "</html>";
-
-
-    Reset();
-    Version("HTTP/1.1");
-    StatusCode(400);
-    Status("Bad Request");
-    HTML();
-    Header("Connection", "close");
-    Body(BadRequestBody);
-
-    return *this;
-}
-
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::OK()
-{
-    Reset();
-    Version("HTTP/1.1");
-    StatusCode(200);
-    Status("OK");
-
-    return *this;
-}
-
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::JSON()
-{
-    Header("Content-Type", "application/json");
-    return *this;
-}
-
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::HTML()
-{
-    Header("Content-Type", "text/html");
-    return *this;
 }
