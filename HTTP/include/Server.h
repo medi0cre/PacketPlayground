@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
-#include <unordered_map>
+#include <cstdint>
 #include <functional>
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -14,10 +14,10 @@ namespace HTTP
 {
     struct Response
     {
-        int StatusCode = 0;
+        uint16_t StatusCode = 0;
         std::string Status = "";
         std::string Version = "";
-        std::unordered_map<std::string, std::string> Headers{};
+        std::vector<KV> Headers{};
         std::string Body = "";
     };
 
@@ -35,10 +35,10 @@ namespace HTTP
 
         std::string Stringify(const Response& Res);
         void HandleNewConnection();
-        void HandleClientData(int Index);
+        void HandleClientData(size_t Index);
         void SendResponse(SOCKET ClientFD, const Response& Res);
-        void RemoveConnection(int Index);
-        void ProcessRequest(int Index, const Request& Req);
+        void RemoveConnection(size_t Index);
+        void ProcessRequest(size_t Index, const Request& Req);
 
     public:
         Server(const char* IPAddress, const char* Port);

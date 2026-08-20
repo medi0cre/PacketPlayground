@@ -10,7 +10,7 @@ void Enforce(bool Condition, const char* Message)
     std::exit(EXIT_FAILURE);
 }
 
-std::string LowerCase(std::string Str)
+std::string ToLower(std::string Str)
 {
     std::transform(Str.begin(), Str.end(), Str.begin(),
     [](unsigned char Character)
@@ -21,41 +21,11 @@ std::string LowerCase(std::string Str)
     return Str;
 }
 
-int SpaceCount(const std::string& Str)
-{
-    int Count = 0;
-
-    for (int i = 0; i < Str.length(); i++)
-    {
-        if (Str[i] == ' ')
-        {
-            Count++;
-        }
-    }
-
-    return Count;
-}
-
-int WhiteSpaceCount(const std::string& Str)
-{
-    int Count = 0;
-
-    for (int i = 0; i < Str.length(); i++)
-    {
-        if (Str[i] == ' ' || Str[i] == '\t' || Str[i] == '\r' || Str[i] == '\n')
-        {
-            Count++;
-        }
-    }
-
-    return Count;
-}
-
 bool IsValidToken(const std::string& Token)
 {
     if (Token.size() == 0) { return false; }
 
-    for (int i = 0; i < Token.size(); i++)
+    for (size_t i = 0; i < Token.size(); i++)
     {
         char C = Token[i];
         if (!((C >= 'a' && C <= 'z')
@@ -74,18 +44,18 @@ bool IsValidToken(const std::string& Token)
 // This function still needs a lot of work
 bool IsValidURI(const std::string& URI)
 {
-	if (URI.size() == 0) { return false; }
-	
+    if (URI.size() == 0) { return false; }
+
     for (size_t i = 0; i < URI.size(); i++)
     {
-		char C = URI[i];
+        char C = URI[i];
         if (C <= 0x20 || C >= 0x7F) { return false; }
-        if (C == '%') 
-		{
-			if (i + 2 >= URI.size()) { return false; }
-			if (!IsHexDigit(URI[i + 1]) || !IsHexDigit(URI[i + 2])) { return false; }
-			i += 2;
-		}
+        if (C == '%')
+        {
+            if (i + 2 >= URI.size()) { return false; }
+            if (!IsHexDigit(URI[i + 1]) || !IsHexDigit(URI[i + 2])) { return false; }
+            i += 2;
+        }
     }
 
     return true;
@@ -106,7 +76,7 @@ int ParseHex(const std::string& Hex)
     if (Hex.size() == 0) { return -1; }
 
     int Value = 0;
-    for (int i = 0; i < Hex.size(); i++)
+    for (size_t i = 0; i < Hex.size(); i++)
     {
         Value *= 16;
         char C = Hex[i];
@@ -119,13 +89,6 @@ int ParseHex(const std::string& Hex)
 
     if (Value > 0x7FFFFFFF) { return -1; }
     return Value;
-}
-
-std::string TrimTrailingWhiteSpace(const std::string& String)
-{
-    size_t End = String.size() - 1;
-    while (End >= 0 && (String[End] == ' ' || String[End] == '\n' || String[End] == '\t' || String[End] == '\r')) { End--; }
-    return String.substr(0, End);
 }
 
 // Minor improvements needed
@@ -144,7 +107,7 @@ std::string URLDecode(const std::string& Encoded)
                 if (IsHexDigit(Encoded[i + 1]) && IsHexDigit(Encoded[i + 2]))
                 {
                     int ByteValue = ParseHex(HexByte);
-                    Result += ByteValue;
+                    Result += std::to_string(ByteValue);
                     i += 3;
                     continue;
                 }
@@ -156,4 +119,18 @@ std::string URLDecode(const std::string& Encoded)
     }
 
     return Result;
+}
+
+bool IsValidMethod(const std::string& Method)
+{
+    return Method == "GET"
+        || Method == "POST"
+        || Method == "PATCH"
+        || Method == "DELETE"
+        || Method == "HEAD"
+        || Method == "PUT"
+        || Method == "CONNECT"
+        || Method == "OPTIONS"
+        || Method == "TRACE"
+        || Method == "PATCH";
 }

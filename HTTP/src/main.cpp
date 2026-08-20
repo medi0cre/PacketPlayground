@@ -28,6 +28,5 @@ int main()
     });
 
     PPG->Run();
-    delete PPG;
     return 0;
 }

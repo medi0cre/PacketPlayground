@@ -66,13 +66,13 @@ void HTTP::Server::Run()
         std::vector<WSAPOLLFD> PollFDList{};
         PollFDList.reserve(ConnectionList.size());
 
-        for (int i = 0; i < ConnectionList.size(); i++) { PollFDList.emplace_back(ConnectionList[i].Socket); }
+        for (size_t i = 0; i < ConnectionList.size(); i++) { PollFDList.emplace_back(ConnectionList[i].Socket); }
 
         // Start polling with -1 timeout to poll forever
         Enforce(PollFDList.size() == ConnectionList.size(), "Mapping wrong between PollFDList and ConnectionList");
         Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
 
-        for (int ConnectionIndex = ConnectionList.size() - 1; ConnectionIndex >= 0; ConnectionIndex--)
+        for (size_t ConnectionIndex = ConnectionList.size() - 1; ConnectionIndex < MaxConnections; ConnectionIndex--)
         {
             if (PollFDList[ConnectionIndex].revents & (POLLIN | POLLHUP))
             {
@@ -148,9 +148,9 @@ void HTTP::Server::HandleNewConnection()
     std::cout << " on socket " << NewFD << "\n";
 }
 
-void HTTP::Server::HandleClientData(int Index)
+void HTTP::Server::HandleClientData(size_t Index)
 {
-    Enforce(Index >= 0 && Index < ConnectionList.size(), "Invalid connection index");
+    Enforce(Index < ConnectionList.size() && Index < MaxConnections, "Invalid connection index");
 
     char Data[BufferSize];
     int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, BufferSize, 0);
@@ -183,8 +183,16 @@ void HTTP::Server::HandleClientData(int Index)
     {
         Parser& Par = ConnectionList[Index].Par;
         ProcessRequest(Index, Par.Req);
-        std::string ConnectionHeader = LowerCase(Par.Req.Headers["connection"]);
-        Enforce(ConnectionHeader == "keep-alive" || ConnectionHeader == "close", "Invalid connection header");
+
+        std::string ConnectionHeader = "";
+        for (size_t i = 0; i < Par.Req.Headers.size(); i++)
+        {
+            if (Par.Req.Headers[i].Key == "connection")
+            {
+                ConnectionHeader = ToLower(Par.Req.Headers[i].Value);
+                break;
+            }
+        }
 
         if (Par.Req.Version == "HTTP/1.0" && ConnectionHeader != "keep-alive")
         {
@@ -206,13 +214,13 @@ std::string HTTP::Server::Stringify(const Response& Res)
     std::string Result = "";
     Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
 
-    for (const auto& Header: Res.Headers) { Result += Header.first + ": " + Header.second + "\r\n"; }
+    for (const auto& Header: Res.Headers) { Result += Header.Key + ": " + Header.Value + "\r\n"; }
 
     Result += "\r\n" + Res.Body;
     return Result;
 }
 
-void HTTP::Server::ProcessRequest(int Index, const Request& Req)
+void HTTP::Server::ProcessRequest(size_t Index, const Request& Req)
 {
     // TODO Implement this later
 }
@@ -241,7 +249,7 @@ void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
     Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response should always be fully sent unless there is a bug");
 }
 
-void HTTP::Server::RemoveConnection(int Index)
+void HTTP::Server::RemoveConnection(size_t Index)
 {
     closesocket(ConnectionList[Index].Socket.fd);
     ConnectionList.erase(ConnectionList.begin() + Index);
@@ -268,7 +276,7 @@ void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::fu
 
 HTTP::Server::~Server()
 {
-    for (int i = 0; i < ConnectionList.size(); i++)
+    for (size_t i = 0; i < ConnectionList.size(); i++)
     {
         if (ConnectionList[i].Socket.fd != INVALID_SOCKET) { closesocket(ConnectionList[i].Socket.fd); }
     }

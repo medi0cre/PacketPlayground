@@ -14,4 +14,12 @@ add_executable(PPG
 )
 
 target_include_directories(PPG PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 target_link_libraries(PPG PRIVATE ws2_32)
+
+target_compile_options(PPG PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        #-Werror
+    )
