@@ -1,42 +1,12 @@
 #include <iostream>
 #include <Parser.h>
 #include <Utils.h>
+#include <Server.h>
 
-HTTP::Parser::Parser()
+int HTTP::Parser::Parse(std::string Data)
 {
-    Reset();
-}
-
-void HTTP::Parser::Reset()
-{
-    Req = {};
-    Req.Method = "";
-    Req.URI = "";
-    Req.Path = "";
-    Req.Query = "";
-    Req.Version = "";
-    Req.Headers = {};
-    Req.Trailers = {};
-    Req.Body = "";
-    Req.ContentLength = -1;
-    Req.IsChunked = false;
-    Req.IsComplete = false;
-    Req.State = ParseState::RequestLineStart;
-
-    State = ParseState::RequestLineStart;
-    Buffer = "";
-    CurrentHeaderName = "";
-    CurrentHeaderValue = "";
-    CurrentChunk = {};
-    ChunkedBody = "";
-    Position = 0;
-    BytesRemaining = 0;
-}
-
-int HTTP::Parser::Parse(std::string Data, size_t DataLength)
-{
-    int BytesConsumed = 0;
-    Buffer += Data.substr(0, DataLength);
+    Buffer += Data;
+    if (Buffer.size() > MaxBufferSize) { return -1; }
 
     while (true)
     {
@@ -52,45 +22,37 @@ int HTTP::Parser::Parse(std::string Data, size_t DataLength)
         {
             Req.IsComplete = true;
             Req.State = ParseComplete;
-            return BytesConsumed;
+            return 1;
         }
-
-        BytesConsumed = Position;
     }
 
-    if (Position > 0)
-    {
-        Buffer.erase(0, Position);
-        Position = 0;
-    }
-
-    return BytesConsumed;
+    return 0;
 }
 
 HTTP::ParseResult HTTP::Parser::ParseByState()
 {
     switch (State)
     {
-    case RequestLineStart: { return ParseRequestLineStart(); break; }
-    case RequestLineMethod: { return ParseRequestLineMethod(); break; }
-    case RequestLineURI: { return ParseRequestLineURI(); break; }
-    case RequestLineVersion: { return ParseRequestLineVersion(); break; }
-    case RequestLineCRLF: { return ParseRequestLineCRLF(); break; }
-    case HeaderName: { return ParseHeaderName(); break; }
-    case HeaderValueStart: { return ParseHeaderValueStart(); break; }
-    case HeaderValue: { return ParseHeaderValue(); break; }
-    case HeaderValueCRLF: { return ParseHeaderValueCRLF(); break; }
-    case HeaderEndCRLF: { return ParseHeaderEndCRLF(); break; }
-    case BodyFixedLength: { return ParseBodyFixedLength(); break; }
-    case BodyChunkSize: { return ParseChunkSize(); break; }
-    case BodyChunkExtension: { return ParseChunkExtension(); break; }
-    case BodyChunkSizeCRLF: { return ParseChunkSizeCRLF(); break; }
-    case BodyChunkData: { return ParseChunkData(); break; }
-    case BodyChunkDataCRLF: { return ParseChunkDataCRLF(); break; }
-    case BodyChunkTrailerName: { return ParseChunkTrailerName(); break; }
-    case BodyChunkTrailerValue: { return ParseChunkTrailerValue(); break; }
-    case BodyChunkTrailerCRLF: { return ParseChunkTrailerCRLF(); break; }
-    case BodyChunkFinalCRLF: { return ParseChunkFinalCRLF(); break; }
+    case RequestLineStart: { return ParseRequestLineStart(); }
+    case RequestLineMethod: { return ParseRequestLineMethod(); }
+    case RequestLineURI: { return ParseRequestLineURI(); }
+    case RequestLineVersion: { return ParseRequestLineVersion(); }
+    case RequestLineCRLF: { return ParseRequestLineCRLF(); }
+    case HeaderName: { return ParseHeaderName(); }
+    case HeaderValueStart: { return ParseHeaderValueStart(); }
+    case HeaderValue: { return ParseHeaderValue(); }
+    case HeaderValueCRLF: { return ParseHeaderValueCRLF(); }
+    case HeaderEndCRLF: { return ParseHeaderEndCRLF(); }
+    case BodyFixedLength: { return ParseBodyFixedLength(); }
+    case BodyChunkSize: { return ParseChunkSize(); }
+    case BodyChunkExtension: { return ParseChunkExtension(); }
+    case BodyChunkSizeCRLF: { return ParseChunkSizeCRLF(); }
+    case BodyChunkData: { return ParseChunkData(); }
+    case BodyChunkDataCRLF: { return ParseChunkDataCRLF(); }
+    case BodyChunkTrailerName: { return ParseChunkTrailerName(); }
+    case BodyChunkTrailerValue: { return ParseChunkTrailerValue(); }
+    case BodyChunkTrailerCRLF: { return ParseChunkTrailerCRLF(); }
+    case BodyChunkFinalCRLF: { return ParseChunkFinalCRLF(); }
     default: { return ParseResult::Error; }
     }
 }
@@ -118,9 +80,10 @@ HTTP::ParseResult HTTP::Parser::ParseRequestLineStart()
 
 HTTP::ParseResult HTTP::Parser::ParseRequestLineMethod()
 {
-    int MethodStart = Position;
+    size_t MethodStart = Position;
     while (Position < Buffer.size())
     {
+        if (Position - MethodStart > MaxMethodSize) { return ParseResult::Error; }
         char Byte = Buffer[Position];
         if (Byte == ' ')
         {
@@ -143,9 +106,10 @@ HTTP::ParseResult HTTP::Parser::ParseRequestLineURI()
     // NGINX style: Accept multiple spaces but not tabs or newlines before URI
     while (Position < Buffer.size() && Buffer[Position] == ' ') { Position++; }
 
-    int URIStart = Position;
+    size_t URIStart = Position;
     while (Position < Buffer.size())
     {
+        if (Position - URIStart > MaxURISize) { return ParseResult::Error; }
         char Byte = Buffer[Position];
         if (Byte == ' ')
         {
@@ -167,12 +131,13 @@ HTTP::ParseResult HTTP::Parser::ParseRequestLineURI()
 
 HTTP::ParseResult HTTP::Parser::ParseRequestLineVersion()
 {
-    // NGINX style: Accept multiple spaces but not tabs or newlines before URI
+    // NGINX style: Accept multiple spaces but not tabs or newlines before version
     while (Position < Buffer.size() && Buffer[Position] == ' ') { Position++; }
 
-    int VersionStart = Position;
+    size_t VersionStart = Position;
     while (Position < Buffer.size())
     {
+        if (Position - VersionStart > MaxVersionSize) { return ParseResult::Error; }
         char Byte = Buffer[Position];
         if (Byte == '\r')
         {
@@ -216,9 +181,10 @@ HTTP::ParseResult HTTP::Parser::ParseHeaderName()
         }
     }
 
-    int NameStart = Position;
+    size_t NameStart = Position;
     while (Position < Buffer.size())
     {
+        if (Position - NameStart > MaxHeaderNameSize) { return ParseResult::Error; }
         char Byte = Buffer[Position];
         if (Byte == ':')
         {
@@ -253,9 +219,11 @@ HTTP::ParseResult HTTP::Parser::ParseHeaderValueStart()
 
 HTTP::ParseResult HTTP::Parser::ParseHeaderValue()
 {
-    int ValueStart = Position;
+    size_t ValueStart = Position;
+
     while(Position < Buffer.size())
     {
+        if (Position - ValueStart > MaxHeaderValueSize) { return ParseResult::Error; }
         char Byte = Buffer[Position];
         if (Byte == '\r')
         {
@@ -263,7 +231,7 @@ HTTP::ParseResult HTTP::Parser::ParseHeaderValue()
             State = ParseState::HeaderValueCRLF;
             return ParseResult::OK;
         }
-        else if (Byte == '\0' or Byte == '\n') { return ParseResult::Error; }
+        else if (Byte == '\0' || Byte == '\n') { return ParseResult::Error; }
         else { Position++; }
     }
 
@@ -278,6 +246,10 @@ HTTP::ParseResult HTTP::Parser::ParseHeaderValueCRLF()
         {
             Position += 2;
             Req.Headers.emplace_back(KV { CurrentHeaderName, CurrentHeaderValue });
+            if (Req.Headers.size() > MaxHeaderCount) { return ParseResult::Error; }
+
+            CurrentHeaderName = "";
+            CurrentHeaderValue = "";
             State = ParseState::HeaderName;
             return ParseResult::OK;
         }
@@ -306,13 +278,12 @@ HTTP::ParseResult HTTP::Parser::ParseBodyFixedLength()
 {
     if (BytesRemaining <= 0)
     {
-        Req.Body = ChunkedBody;
         State = ParseState::ParseComplete;
         return ParseResult::Complete;
     }
 
     size_t Available = Buffer.size() - Position;
-    int ToRead = std::min(Available, BytesRemaining);
+    size_t ToRead = std::min(Available, BytesRemaining);
 
     Req.Body += Buffer.substr(Position, ToRead);
     Position += ToRead;
@@ -329,7 +300,8 @@ HTTP::ParseResult HTTP::Parser::ParseBodyFixedLength()
 
 HTTP::ParseResult HTTP::Parser::ParseChunkSize()
 {
-    int SizeStart = Position;
+    size_t SizeStart = Position;
+
     while (Position < Buffer.size())
     {
         char Byte = Buffer[Position];
@@ -337,9 +309,9 @@ HTTP::ParseResult HTTP::Parser::ParseChunkSize()
         else if (Byte == '\r')
         {
             std::string HexString = Buffer.substr(SizeStart, Position - SizeStart);
-            int HexSize = ParseHex(HexString);
+            long long HexSize = ParseHex(HexString);
 			
-			if (HexSize < 0) { return ParseResult::Error; }
+			if (HexSize < 0 || HexSize > MaxChunkSize) { return ParseResult::Error; }
 			else { CurrentChunk.Size = HexSize; }
 
             State = ParseState::BodyChunkSizeCRLF;
@@ -348,9 +320,9 @@ HTTP::ParseResult HTTP::Parser::ParseChunkSize()
         else if (Byte == ';')
         {
             std::string HexString = Buffer.substr(SizeStart, Position - SizeStart);
-            int HexSize = ParseHex(HexString);
+            long long HexSize = ParseHex(HexString);
 			
-			if (HexSize < 0) { return ParseResult::Error; }
+			if (HexSize < 0 || HexSize > MaxChunkSize) { return ParseResult::Error; }
 			else { CurrentChunk.Size = HexSize; }
 
             Position++;
@@ -360,13 +332,15 @@ HTTP::ParseResult HTTP::Parser::ParseChunkSize()
         else { return ParseResult::Error; }
     }
 
-    return Incomplete;
+    return ParseResult::Incomplete;
 }
 
 HTTP::ParseResult HTTP::Parser::ParseChunkExtension()
 {
+    size_t ExtensionStart = Position;
     while (Position < Buffer.size())
     {
+        if (Position - ExtensionStart > MaxChunkExtensionSize) { return ParseResult::Error; }
         char Byte = Buffer[Position];
         if (Byte == '\r')
         {
@@ -408,9 +382,9 @@ HTTP::ParseResult HTTP::Parser::ParseChunkSizeCRLF()
 
 HTTP::ParseResult HTTP::Parser::ParseChunkData()
 {
-    int Available = Buffer.size() - Position;
-    int Needed = CurrentChunk.Size - CurrentChunk.BytesRead;
-    int ToRead = std::min(Available, Needed);
+    size_t Available = Buffer.size() - Position;
+    size_t Needed = CurrentChunk.Size - CurrentChunk.BytesRead;
+    size_t ToRead = std::min(Available, Needed);
 
     CurrentChunk.Data += Buffer.substr(Position, ToRead);
     ChunkedBody += Buffer.substr(Position, ToRead);
@@ -455,9 +429,10 @@ HTTP::ParseResult HTTP::Parser::ParseChunkTrailerName()
         }
     }
 
-    int NameStart = Position;
+    size_t NameStart = Position;
     while (Position < Buffer.size())
     {
+        if  (Position - NameStart > MaxTrailerNameSize) { return ParseResult::Error; }
         char Byte = Buffer[Position];
         if (Byte == ':')
         {
@@ -486,9 +461,10 @@ HTTP::ParseResult HTTP::Parser::ParseChunkTrailerValue()
 
     if (Position >= Buffer.size()) { return ParseResult::Incomplete; }
 
-    int ValueStart = Position;
+    size_t ValueStart = Position;
     while(Position < Buffer.size())
     {
+        if (Position - ValueStart > MaxTrailerValueSize) { return ParseResult::Error; }
         char Byte = Buffer[Position];
         if (Byte == '\r')
         {
@@ -511,6 +487,10 @@ HTTP::ParseResult HTTP::Parser::ParseChunkTrailerCRLF()
         {
             Position += 2;
             Req.Trailers.emplace_back(KV { CurrentTrailerName, CurrentTrailerValue });
+            if (Req.Trailers.size() > MaxTrailerCount) { return ParseResult::Error; }
+
+            CurrentTrailerName = "";
+            CurrentTrailerValue = "";
             State = ParseState::BodyChunkTrailerName;
             return ParseResult::OK;
         }
@@ -564,6 +544,8 @@ HTTP::ParseResult HTTP::Parser::FinalizeHeaders()
     {
         if (Req.Headers[i].Key == "transfer-encoding")
         {
+            // For now we only deal with chunked encoding for the HTTP 1.1 server
+            // Whether we upgrade later to include gzip is still undecided
             std::string TransferEncoding = ToLower(Req.Headers[i].Value);
             if (TransferEncoding == "chunked")
             {
@@ -571,12 +553,18 @@ HTTP::ParseResult HTTP::Parser::FinalizeHeaders()
                 State = ParseState::BodyChunkSize;
                 return ParseResult::OK;
             }
+            else { return ParseResult::Error; }
         }
 
         if (Req.Headers[i].Key == "content-length")
         {
-            CLFlag = true;
-            CLIndex = i;
+            // Reject duplicate content length headers
+            if (!CLFlag)
+            {
+                CLFlag = true;
+                CLIndex = i;
+            }
+            else { return ParseResult::Error; }
         }
     }
 
@@ -602,7 +590,7 @@ HTTP::ParseResult HTTP::Parser::FinalizeHeaders()
         }
         catch (const std::exception& E)
         {
-            std::cerr << "Error while converting from string to int: " << E.what() << "\n";
+            std::cerr << "Error while converting from string to integer: " << E.what() << "\n";
             return ParseResult::Error;
         }
     }

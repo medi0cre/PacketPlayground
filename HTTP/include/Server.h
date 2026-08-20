@@ -7,8 +7,8 @@
 #include <ws2tcpip.h>
 #include <Parser.h>
 
-#define MaxConnections 32
-#define BufferSize 32768
+constexpr size_t MaxConnections = 32;
+constexpr size_t MaxBufferSize = 32768;
 
 namespace HTTP
 {

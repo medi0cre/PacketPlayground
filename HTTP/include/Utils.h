@@ -7,6 +7,6 @@ bool IsValidToken(const std::string& Token);
 bool IsValidURI(const std::string& URI);
 bool IsValidHTTPVersion(const std::string& Version);
 bool IsHexDigit(const char C);
-int ParseHex(const std::string& Hex);
+long long ParseHex(const std::string& Hex);
 std::string URLDecode(const std::string& Encoded);
 bool IsValidMethod(const std::string& Method);

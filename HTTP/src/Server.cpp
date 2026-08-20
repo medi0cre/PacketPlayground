@@ -152,8 +152,8 @@ void HTTP::Server::HandleClientData(size_t Index)
 {
     Enforce(Index < ConnectionList.size() && Index < MaxConnections, "Invalid connection index");
 
-    char Data[BufferSize];
-    int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, BufferSize, 0);
+    char Data[MaxBufferSize];
+    int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, MaxBufferSize, 0);
 
     if (NumBytes <= 0)
     {
@@ -168,7 +168,7 @@ void HTTP::Server::HandleClientData(size_t Index)
         return;
     }
 
-    int Result = ConnectionList[Index].Par.Parse(std::string(Data, NumBytes), NumBytes);
+    int Result = ConnectionList[Index].Par.Parse(std::string(Data, NumBytes));
     if (Result < 0)
     {
         // Error: Send bad request and dip
@@ -205,7 +205,7 @@ void HTTP::Server::HandleClientData(size_t Index)
             return;
         }
 
-        Par.Reset();
+        Par = {};
     }
 }
 

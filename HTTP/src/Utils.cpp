@@ -71,11 +71,11 @@ bool IsHexDigit(const char C)
     return ((C >= '0' && C <= '9') || (C >= 'a' && C <= 'f') || (C >= 'A' && C <= 'F'));
 }
 
-int ParseHex(const std::string& Hex)
+long long ParseHex(const std::string& Hex)
 {
     if (Hex.size() == 0) { return -1; }
 
-    int Value = 0;
+    long long Value = 0;
     for (size_t i = 0; i < Hex.size(); i++)
     {
         Value *= 16;
