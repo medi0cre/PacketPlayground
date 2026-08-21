@@ -3,7 +3,7 @@
 #include <Utils.h>
 #include <Server.h>
 
-int HTTP::Parser::Parse(const std::string& Data)
+int PPG::Parser::Parse(const std::string& Data)
 {
     Buffer += Data;
     if (Buffer.size() > MaxBufferSize) { return -1; }
@@ -26,7 +26,7 @@ int HTTP::Parser::Parse(const std::string& Data)
     }
 }
 
-HTTP::ParseResult HTTP::Parser::ParseByState()
+PPG::ParseResult PPG::Parser::ParseByState()
 {
     switch (State)
     {
@@ -54,7 +54,7 @@ HTTP::ParseResult HTTP::Parser::ParseByState()
     }
 }
 
-HTTP::ParseResult HTTP::Parser::ParseRequestLineStart()
+PPG::ParseResult PPG::Parser::ParseRequestLineStart()
 {
     while (Position < Buffer.size())
     {
@@ -75,7 +75,7 @@ HTTP::ParseResult HTTP::Parser::ParseRequestLineStart()
     return ParseResult::OK;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseRequestLineMethod()
+PPG::ParseResult PPG::Parser::ParseRequestLineMethod()
 {
     size_t MethodStart = Position;
     while (Position < Buffer.size())
@@ -98,7 +98,7 @@ HTTP::ParseResult HTTP::Parser::ParseRequestLineMethod()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseRequestLineURI()
+PPG::ParseResult PPG::Parser::ParseRequestLineURI()
 {
     // NGINX style: Accept multiple spaces but not tabs or newlines before URI
     while (Position < Buffer.size() && Buffer[Position] == ' ') { Position++; }
@@ -126,7 +126,7 @@ HTTP::ParseResult HTTP::Parser::ParseRequestLineURI()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseRequestLineVersion()
+PPG::ParseResult PPG::Parser::ParseRequestLineVersion()
 {
     // NGINX style: Accept multiple spaces but not tabs or newlines before version
     while (Position < Buffer.size() && Buffer[Position] == ' ') { Position++; }
@@ -151,7 +151,7 @@ HTTP::ParseResult HTTP::Parser::ParseRequestLineVersion()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseRequestLineCRLF()
+PPG::ParseResult PPG::Parser::ParseRequestLineCRLF()
 {
     if (Position + 1 < Buffer.size())
     {
@@ -167,7 +167,7 @@ HTTP::ParseResult HTTP::Parser::ParseRequestLineCRLF()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseHeaderName()
+PPG::ParseResult PPG::Parser::ParseHeaderName()
 {
     if (Position + 1 < Buffer.size())
     {
@@ -200,7 +200,7 @@ HTTP::ParseResult HTTP::Parser::ParseHeaderName()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseHeaderValueStart()
+PPG::ParseResult PPG::Parser::ParseHeaderValueStart()
 {
     while (Position < Buffer.size())
     {
@@ -214,7 +214,7 @@ HTTP::ParseResult HTTP::Parser::ParseHeaderValueStart()
     return ParseResult::OK;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseHeaderValue()
+PPG::ParseResult PPG::Parser::ParseHeaderValue()
 {
     size_t ValueStart = Position;
 
@@ -235,7 +235,7 @@ HTTP::ParseResult HTTP::Parser::ParseHeaderValue()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseHeaderValueCRLF()
+PPG::ParseResult PPG::Parser::ParseHeaderValueCRLF()
 {
     if (Position + 1 < Buffer.size())
     {
@@ -256,7 +256,7 @@ HTTP::ParseResult HTTP::Parser::ParseHeaderValueCRLF()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseHeaderEndCRLF()
+PPG::ParseResult PPG::Parser::ParseHeaderEndCRLF()
 {
     if (Position + 1 < Buffer.size())
     {
@@ -271,7 +271,7 @@ HTTP::ParseResult HTTP::Parser::ParseHeaderEndCRLF()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseBodyFixedLength()
+PPG::ParseResult PPG::Parser::ParseBodyFixedLength()
 {
     if (BytesRemaining <= 0)
     {
@@ -297,7 +297,7 @@ HTTP::ParseResult HTTP::Parser::ParseBodyFixedLength()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseChunkSize()
+PPG::ParseResult PPG::Parser::ParseChunkSize()
 {
     size_t SizeStart = Position;
 
@@ -334,7 +334,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkSize()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseChunkExtension()
+PPG::ParseResult PPG::Parser::ParseChunkExtension()
 {
     // We don't give a flying fuck about chunk extensions around here!
     size_t ExtensionStart = Position;
@@ -353,7 +353,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkExtension()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseChunkSizeCRLF()
+PPG::ParseResult PPG::Parser::ParseChunkSizeCRLF()
 {
     if (Position + 1 < Buffer.size())
     {
@@ -380,7 +380,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkSizeCRLF()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseChunkData()
+PPG::ParseResult PPG::Parser::ParseChunkData()
 {
     size_t Available = Buffer.size() - Position;
     size_t Needed = CurrentChunk.Size - CurrentChunk.BytesRead;
@@ -402,7 +402,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkData()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseChunkDataCRLF()
+PPG::ParseResult PPG::Parser::ParseChunkDataCRLF()
 {
     if (Position + 1 < Buffer.size())
     {
@@ -419,7 +419,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkDataCRLF()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseChunkTrailerName()
+PPG::ParseResult PPG::Parser::ParseChunkTrailerName()
 {
     if (Position + 1 < Buffer.size())
     {
@@ -451,7 +451,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkTrailerName()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseChunkTrailerValue()
+PPG::ParseResult PPG::Parser::ParseChunkTrailerValue()
 {
     while (Position < Buffer.size())
     {
@@ -480,7 +480,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkTrailerValue()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseChunkTrailerCRLF()
+PPG::ParseResult PPG::Parser::ParseChunkTrailerCRLF()
 {
     if (Position + 1 < Buffer.size())
     {
@@ -501,7 +501,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkTrailerCRLF()
     return ParseResult::Incomplete;
 }
 
-HTTP::ParseResult HTTP::Parser::ParseChunkFinalCRLF()
+PPG::ParseResult PPG::Parser::ParseChunkFinalCRLF()
 {
     if (Position + 1 < Buffer.size())
     {
@@ -518,7 +518,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkFinalCRLF()
     return ParseResult::Incomplete;
 }
 
-void HTTP::Parser::ParseURIComponents()
+void PPG::Parser::ParseURIComponents()
 {
     size_t QuestionMarkPosition = Req.URI.find('?');
     if (QuestionMarkPosition != std::string::npos)
@@ -535,7 +535,7 @@ void HTTP::Parser::ParseURIComponents()
     Req.Path = URLDecode(Req.Path);
 }
 
-HTTP::ParseResult HTTP::Parser::FinalizeHeaders()
+PPG::ParseResult PPG::Parser::FinalizeHeaders()
 {
     bool CLFlag = false;
     bool TEFlag = false;

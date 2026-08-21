@@ -1,49 +1,49 @@
 #include <ResponseBuilder.h>
 
-HTTP::Response HTTP::ResponseBuilder::Build()
+PPG::Response PPG::ResponseBuilder::Build()
 {
     Res.Headers.emplace_back(KV { "Server", "PacketPlayground" });
     Res.Headers.emplace_back(KV { "Content-Length", std::to_string(Res.Body.size()) });
     return Res;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::Reset()
+PPG::ResponseBuilder& PPG::ResponseBuilder::Reset()
 {
     Res = {};
     return *this;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::Version(const std::string& Version)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Version(const std::string& Version)
 {
     Res.Version = Version;
     return *this;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::StatusCode(uint16_t StatusCode)
+PPG::ResponseBuilder& PPG::ResponseBuilder::StatusCode(uint16_t StatusCode)
 {
     Res.StatusCode = StatusCode;
     return *this;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::Status(const std::string& Status)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Status(const std::string& Status)
 {
     Res.Status = Status;
     return *this;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::Body(const std::string& Body)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Body(const std::string& Body)
 {
     Res.Body = Body;
     return *this;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::Header(const std::string& Key, const std::string& Value)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Header(const std::string& Key, const std::string& Value)
 {
     Res.Headers.emplace_back(KV { Key, Value });
     return *this;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::NotFound()
+PPG::ResponseBuilder& PPG::ResponseBuilder::NotFound()
 {
     const std::string NotFoundBody = "<html>"
                                        "<head><title>404 Not Found</title></head>"
@@ -65,7 +65,7 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::NotFound()
     return *this;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::BadRequest()
+PPG::ResponseBuilder& PPG::ResponseBuilder::BadRequest()
 {
     const std::string BadRequestBody = "<html>"
                                          "<head><title>400 Bad Request</title></head>"
@@ -87,7 +87,7 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::BadRequest()
     return *this;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::OK()
+PPG::ResponseBuilder& PPG::ResponseBuilder::OK()
 {
     Reset();
     Version("HTTP/1.1");
@@ -97,13 +97,13 @@ HTTP::ResponseBuilder& HTTP::ResponseBuilder::OK()
     return *this;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::JSON()
+PPG::ResponseBuilder& PPG::ResponseBuilder::JSON()
 {
     Header("Content-Type", "application/json");
     return *this;
 }
 
-HTTP::ResponseBuilder& HTTP::ResponseBuilder::HTML()
+PPG::ResponseBuilder& PPG::ResponseBuilder::HTML()
 {
     Header("Content-Type", "text/html");
     return *this;

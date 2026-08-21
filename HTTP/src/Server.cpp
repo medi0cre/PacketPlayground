@@ -3,7 +3,7 @@
 #include <Server.h>
 #include <ResponseBuilder.h>
 
-HTTP::Server::Server(const char* IPAddress, const char* Port)
+PPG::Server::Server(const char* IPAddress, const char* Port)
 {
     // Load winsock API version 2.2
     WSADATA Data{};
@@ -57,7 +57,7 @@ HTTP::Server::Server(const char* IPAddress, const char* Port)
     Enforce(ConnectionList.size() == 1, "There should not be any other connections other than the listening socket");
 }
 
-void HTTP::Server::Run()
+void PPG::Server::Run()
 {
     std::cout << "Launching server. Waiting for new connections...\n";
 
@@ -87,12 +87,12 @@ void HTTP::Server::Run()
     }
 }
 
-void HTTP::Server::HandleNewConnection()
+void PPG::Server::HandleNewConnection()
 {
     sockaddr_storage RemoteAddr{};
     socklen_t AddrLen = sizeof(RemoteAddr);
     SOCKET NewFD = INVALID_SOCKET;
-    char RemoteIP[INET6_ADDRSTRLEN]{};
+    char RemoteIP[INET6_ADDRSTRLEN];
 
     NewFD = accept(ConnectionList[0].Socket.fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
     if (NewFD == INVALID_SOCKET)
@@ -148,12 +148,12 @@ void HTTP::Server::HandleNewConnection()
     std::cout << " on socket " << NewFD << "\n";
 }
 
-void HTTP::Server::HandleClientData(size_t Index)
+void PPG::Server::HandleClientData(size_t Index)
 {
     Enforce(Index < ConnectionList.size() && Index < MaxConnections, "Invalid connection index");
 
-    char Data[MaxBufferSize];
-    int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, MaxBufferSize, 0);
+    char Data[ReceiveBufferSize];
+    int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, ReceiveBufferSize, 0);
 
     if (NumBytes <= 0)
     {
@@ -168,61 +168,76 @@ void HTTP::Server::HandleClientData(size_t Index)
         return;
     }
 
-    int Result = ConnectionList[Index].Par.Parse(std::string(Data, NumBytes));
-    if (Result < 0)
+    while (true)
     {
-        // Error: Send bad request and dip
-        ResponseBuilder Builder{};
-        Response Res = Builder.BadRequest().Build();
-        SendResponse(ConnectionList[Index].Socket.fd, Res);
-        RemoveConnection(Index);
-        return;
-    }
+        int Result = ConnectionList[Index].Par.Parse(std::string(Data, NumBytes));
 
-    if (ConnectionList[Index].Par.Req.IsComplete)
-    {
-        Parser& Par = ConnectionList[Index].Par;
-        ProcessRequest(Index, Par.Req);
-
-        bool CloseFlag = false;
-        bool KeepAliveFlag = false;
-
-        for (size_t i = 0; i < Par.Req.Headers.size(); i++)
+        switch (Result)
         {
-            if (Par.Req.Headers[i].Key != "connection") { continue; }
-            std::string Value = ToLower(Par.Req.Headers[i].Value);
-
-            if (Value.find("close") != std::string::npos) { CloseFlag = true; }
-            else if (Value.find("keep-alive") != std::string::npos) { KeepAliveFlag = true; }
-        }
-
-        if (CloseFlag)
+        case -1:
         {
+            // Error: Send bad request and dip
+            std::cerr << "Bad request on socket " << ConnectionList[Index].Socket.fd << "\n";
+            ResponseBuilder Builder{};
+            Response Res = Builder.BadRequest().Build();
+            SendResponse(ConnectionList[Index].Socket.fd, Res);
             RemoveConnection(Index);
             return;
         }
-        else if (KeepAliveFlag)
+        case 0:
         {
-            const std::string Remaining = Par.Buffer.substr(Par.Position);
-            Par = {};
-            Par.Buffer = Remaining;
-        }
-        else if (Par.Req.Version == "HTTP/1.1")
-        {
-            const std::string Remaining = Par.Buffer.substr(Par.Position);
-            Par = {};
-            Par.Buffer = Remaining;
-        }
-        else if (Par.Req.Version == "HTTP/1.0")
-        {
-            RemoveConnection(Index);
+            // Need more data!
             return;
         }
-        else { Enforce(false, "Impossible state reached during connection closing decision"); }
+        case 1:
+        {
+            Parser& Par = ConnectionList[Index].Par;
+            ProcessRequest(Index, Par.Req);
+
+            bool CloseFlag = false;
+            bool KeepAliveFlag = false;
+
+            for (size_t i = 0; i < Par.Req.Headers.size(); i++)
+            {
+                if (Par.Req.Headers[i].Key != "connection") { continue; }
+                std::string Value = ToLower(Par.Req.Headers[i].Value);
+
+                if (Value.find("close") != std::string::npos) { CloseFlag = true; }
+                if (Value.find("keep-alive") != std::string::npos) { KeepAliveFlag = true; }
+            }
+
+            if (CloseFlag)
+            {
+                RemoveConnection(Index);
+                return;
+            }
+            else if (KeepAliveFlag)
+            {
+                const std::string Remaining = Par.Buffer.substr(Par.Position);
+                Par = {};
+                Par.Buffer = Remaining;
+            }
+            else if (Par.Req.Version == "HTTP/1.1")
+            {
+                const std::string Remaining = Par.Buffer.substr(Par.Position);
+                Par = {};
+                Par.Buffer = Remaining;
+            }
+            else if (Par.Req.Version == "HTTP/1.0")
+            {
+                RemoveConnection(Index);
+                return;
+            }
+            else { Enforce(false, "Impossible state reached during connection closing decision"); }
+            break;
+        }
+        default:
+            Enforce(false, "Invariant broken inside HandleClientData()");
+        }
     }
 }
 
-std::string HTTP::Server::Stringify(const Response& Res)
+std::string PPG::Server::Stringify(const Response& Res)
 {
     std::string Result = "";
     Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
@@ -233,12 +248,12 @@ std::string HTTP::Server::Stringify(const Response& Res)
     return Result;
 }
 
-void HTTP::Server::ProcessRequest(size_t Index, const Request& Req)
+void PPG::Server::ProcessRequest(size_t Index, const Request& Req)
 {
     // TODO Implement this later
 }
 
-void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
+void PPG::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 {
     std::string ResponseString = Stringify(Res);
     Enforce(ResponseString.size() != 0, "Response should NEVER be empty");
@@ -262,13 +277,13 @@ void HTTP::Server::SendResponse(SOCKET ClientFD, const Response& Res)
     Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response should always be fully sent unless there is a bug");
 }
 
-void HTTP::Server::RemoveConnection(size_t Index)
+void PPG::Server::RemoveConnection(size_t Index)
 {
     closesocket(ConnectionList[Index].Socket.fd);
     ConnectionList.erase(ConnectionList.begin() + Index);
 }
 
-void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
+void PPG::Server::AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
 {
     if (Path.size() == 0)
     {
@@ -276,7 +291,7 @@ void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::fu
         return;
     }
 
-    if (Method != "GET" && Method != "POST" && Method != "PATCH" && Method != "PUT" && Method != "DELETE")
+    if (!IsValidMethod(Method))
     {
         std::cerr << "Invalid method provided, failed to add route\n";
         std::cerr << "Please check whether all methods are uppercase and valid, e.g. GET, POST, PATCH\n";
@@ -288,7 +303,7 @@ void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::fu
     std::cout << "Added route: " << Method << " " << Path << "\n";
 }
 
-HTTP::Server::~Server()
+PPG::Server::~Server()
 {
     for (size_t i = 0; i < ConnectionList.size(); i++)
     {

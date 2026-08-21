@@ -137,7 +137,7 @@ bool IsValidMethod(const std::string& Method)
 
 std::string TrimTrailingWhiteSpace(const std::string& String)
 {
-    size_t End = String.size() - 1;
-    while (End >= 0 && (String[End] == ' ' || String[End] == '\n' || String[End] == '\t' || String[End] == '\r')) { End--; }
-    return String.substr(0, End);
+    const size_t End = String.find_last_not_of(" \n\t\r");
+    if (End == std::string::npos) { return ""; }
+    return String.substr(0, End + 1);
 }

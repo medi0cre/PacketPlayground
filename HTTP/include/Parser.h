@@ -13,8 +13,9 @@ constexpr size_t MaxVersionSize = 8;
 constexpr size_t MaxHeaderCount = 128;
 constexpr size_t MaxTrailerCount = 32;
 constexpr size_t MaxChunkSize = 4096;
+constexpr size_t MaxBodySize = 30720;
 
-namespace HTTP
+namespace PPG
 {
     enum ParseResult
     {
@@ -65,10 +66,8 @@ namespace HTTP
         std::vector<KV> Headers{};
         std::vector<KV> Trailers{};
         std::string Body = "";
-        ParseState State = ParseState::RequestLineStart;
         size_t ContentLength = 0;
         bool IsChunked = false;
-        bool IsComplete = false;
     };
 
     struct Chunk
@@ -98,7 +97,7 @@ namespace HTTP
         ~Parser() = default;
 
         void ParseURIComponents();
-        int Parse(std::string Data);
+        int Parse(const std::string& Data);
 
         ParseResult FinalizeHeaders();
 

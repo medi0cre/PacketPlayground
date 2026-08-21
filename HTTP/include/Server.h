@@ -9,8 +9,9 @@
 
 constexpr size_t MaxConnections = 32;
 constexpr size_t MaxBufferSize = 32768;
+constexpr size_t ReceiveBufferSize = 8192;
 
-namespace HTTP
+namespace PPG
 {
     struct Response
     {

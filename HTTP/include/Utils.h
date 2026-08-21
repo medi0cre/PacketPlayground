@@ -10,3 +10,4 @@ bool IsHexDigit(const char C);
 long long ParseHex(const std::string& Hex);
 std::string URLDecode(const std::string& Encoded);
 bool IsValidMethod(const std::string& Method);
+std::string TrimTrailingWhiteSpace(const std::string& String);

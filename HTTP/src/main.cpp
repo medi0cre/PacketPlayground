@@ -4,12 +4,12 @@
 
 int main()
 {
-    RunTests();
-    HTTP::Server* PPG = new HTTP::Server("127.0.0.1", "8080");
+    //RunTests();
+    PPG::Server* PPG = new PPG::Server("127.0.0.1", "8080");
 
-    PPG->AddRoute("GET", "/", [](const HTTP::Request& Req)
+    PPG->AddRoute("GET", "/", [](const PPG::Request& Req)
     {
-        HTTP::ResponseBuilder Builder;
+        PPG::ResponseBuilder Builder;
         return Builder
             .OK()
             .HTML()
@@ -17,9 +17,9 @@ int main()
             .Build();
     });
 
-    PPG->AddRoute("POST", "/echo", [](const HTTP::Request& Req)
+    PPG->AddRoute("POST", "/echo", [](const PPG::Request& Req)
     {
-        HTTP::ResponseBuilder Builder;
+        PPG::ResponseBuilder Builder;
         return Builder
             .OK()
             .JSON()
