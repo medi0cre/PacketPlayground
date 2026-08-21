@@ -134,3 +134,10 @@ bool IsValidMethod(const std::string& Method)
         || Method == "TRACE"
         || Method == "PATCH";
 }
+
+std::string TrimTrailingWhiteSpace(const std::string& String)
+{
+    size_t End = String.size() - 1;
+    while (End >= 0 && (String[End] == ' ' || String[End] == '\n' || String[End] == '\t' || String[End] == '\r')) { End--; }
+    return String.substr(0, End);
+}

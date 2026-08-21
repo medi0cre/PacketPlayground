@@ -3,7 +3,7 @@
 #include <Utils.h>
 #include <Server.h>
 
-int HTTP::Parser::Parse(std::string Data)
+int HTTP::Parser::Parse(const std::string& Data)
 {
     Buffer += Data;
     if (Buffer.size() > MaxBufferSize) { return -1; }
@@ -12,21 +12,18 @@ int HTTP::Parser::Parse(std::string Data)
     {
         ParseResult Result = ParseByState();
 
-        if (Result == ParseResult::Incomplete) { break; }
-        else if (Result == ParseResult::Error)
+        switch (Result)
         {
-            Req.State = State;
-            return -1;
+        case ParseResult::Incomplete: { return 0; }
+        case ParseResult::Error: { return -1; }
+        case ParseResult::Complete: { return 1; }
+        default:
+        {
+            Enforce(Result == ParseResult::OK, "Invariant broken inside Parse() function");
+            break;
         }
-        else if (Result == ParseResult::Complete)
-        {
-            Req.IsComplete = true;
-            Req.State = ParseComplete;
-            return 1;
         }
     }
-
-    return 0;
 }
 
 HTTP::ParseResult HTTP::Parser::ParseByState()
@@ -227,7 +224,7 @@ HTTP::ParseResult HTTP::Parser::ParseHeaderValue()
         char Byte = Buffer[Position];
         if (Byte == '\r')
         {
-            CurrentHeaderValue = Buffer.substr(ValueStart, Position - ValueStart);
+            CurrentHeaderValue = TrimTrailingWhiteSpace(Buffer.substr(ValueStart, Position - ValueStart));
             State = ParseState::HeaderValueCRLF;
             return ParseResult::OK;
         }
@@ -286,6 +283,8 @@ HTTP::ParseResult HTTP::Parser::ParseBodyFixedLength()
     size_t ToRead = std::min(Available, BytesRemaining);
 
     Req.Body += Buffer.substr(Position, ToRead);
+    if (Req.Body.size() > MaxBodySize) { return ParseResult::Error; }
+
     Position += ToRead;
     BytesRemaining -= ToRead;
 
@@ -310,9 +309,9 @@ HTTP::ParseResult HTTP::Parser::ParseChunkSize()
         {
             std::string HexString = Buffer.substr(SizeStart, Position - SizeStart);
             long long HexSize = ParseHex(HexString);
-			
-			if (HexSize < 0 || HexSize > MaxChunkSize) { return ParseResult::Error; }
-			else { CurrentChunk.Size = HexSize; }
+
+            if (HexSize < 0 || static_cast<size_t>(HexSize) > MaxChunkSize) { return ParseResult::Error; }
+            else { CurrentChunk.Size = HexSize; }
 
             State = ParseState::BodyChunkSizeCRLF;
             return ParseResult::OK;
@@ -321,9 +320,9 @@ HTTP::ParseResult HTTP::Parser::ParseChunkSize()
         {
             std::string HexString = Buffer.substr(SizeStart, Position - SizeStart);
             long long HexSize = ParseHex(HexString);
-			
-			if (HexSize < 0 || HexSize > MaxChunkSize) { return ParseResult::Error; }
-			else { CurrentChunk.Size = HexSize; }
+
+            if (HexSize < 0 || static_cast<size_t>(HexSize) > MaxChunkSize) { return ParseResult::Error; }
+            else { CurrentChunk.Size = HexSize; }
 
             Position++;
             State = ParseState::BodyChunkExtension;
@@ -337,6 +336,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkSize()
 
 HTTP::ParseResult HTTP::Parser::ParseChunkExtension()
 {
+    // We don't give a flying fuck about chunk extensions around here!
     size_t ExtensionStart = Position;
     while (Position < Buffer.size())
     {
@@ -388,6 +388,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkData()
 
     CurrentChunk.Data += Buffer.substr(Position, ToRead);
     ChunkedBody += Buffer.substr(Position, ToRead);
+    if (ChunkedBody.size() > MaxBodySize) { return ParseResult::Error; }
 
     Position += ToRead;
     CurrentChunk.BytesRead += ToRead;
@@ -468,7 +469,7 @@ HTTP::ParseResult HTTP::Parser::ParseChunkTrailerValue()
         char Byte = Buffer[Position];
         if (Byte == '\r')
         {
-            CurrentTrailerValue = Buffer.substr(ValueStart, Position - ValueStart);
+            CurrentTrailerValue = TrimTrailingWhiteSpace(Buffer.substr(ValueStart, Position - ValueStart));
             State = ParseState::BodyChunkTrailerCRLF;
             return ParseResult::OK;
         }
@@ -537,21 +538,19 @@ void HTTP::Parser::ParseURIComponents()
 HTTP::ParseResult HTTP::Parser::FinalizeHeaders()
 {
     bool CLFlag = false;
+    bool TEFlag = false;
     size_t CLIndex = 0;
+    size_t TEIndex = 0;
 
-    // Transfer encoding takes priority over content length
     for (size_t i = 0; i < Req.Headers.size(); i++)
     {
         if (Req.Headers[i].Key == "transfer-encoding")
         {
-            // For now we only deal with chunked encoding for the HTTP 1.1 server
-            // Whether we upgrade later to include gzip is still undecided
-            std::string TransferEncoding = ToLower(Req.Headers[i].Value);
-            if (TransferEncoding == "chunked")
+            // Reject duplicate transfer encoding headers
+            if (!TEFlag)
             {
-                Req.IsChunked = true;
-                State = ParseState::BodyChunkSize;
-                return ParseResult::OK;
+                TEFlag = true;
+                TEIndex = i;
             }
             else { return ParseResult::Error; }
         }
@@ -568,7 +567,21 @@ HTTP::ParseResult HTTP::Parser::FinalizeHeaders()
         }
     }
 
-    if (CLFlag)
+    if (CLFlag && TEFlag) { return ParseResult::Error; }
+    else if (TEFlag)
+    {
+        // For now we only deal with chunked encoding for the HTTP 1.1 server
+        // Whether we upgrade later to include gzip is still undecided
+        std::string TransferEncoding = ToLower(Req.Headers[TEIndex].Value);
+        if (TransferEncoding == "chunked")
+        {
+            Req.IsChunked = true;
+            State = ParseState::BodyChunkSize;
+            return ParseResult::OK;
+        }
+        else { return ParseResult::Error; }
+    }
+    else if (CLFlag)
     {
         try
         {
@@ -579,7 +592,7 @@ HTTP::ParseResult HTTP::Parser::FinalizeHeaders()
             if (Req.ContentLength == 0)
             {
                 State = ParseState::ParseComplete;
-                return ParseResult::Complete; 
+                return ParseResult::Complete;
             }
             else
             {

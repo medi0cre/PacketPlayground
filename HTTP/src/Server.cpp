@@ -184,28 +184,41 @@ void HTTP::Server::HandleClientData(size_t Index)
         Parser& Par = ConnectionList[Index].Par;
         ProcessRequest(Index, Par.Req);
 
-        std::string ConnectionHeader = "";
+        bool CloseFlag = false;
+        bool KeepAliveFlag = false;
+
         for (size_t i = 0; i < Par.Req.Headers.size(); i++)
         {
-            if (Par.Req.Headers[i].Key == "connection")
-            {
-                ConnectionHeader = ToLower(Par.Req.Headers[i].Value);
-                break;
-            }
+            if (Par.Req.Headers[i].Key != "connection") { continue; }
+            std::string Value = ToLower(Par.Req.Headers[i].Value);
+
+            if (Value.find("close") != std::string::npos) { CloseFlag = true; }
+            else if (Value.find("keep-alive") != std::string::npos) { KeepAliveFlag = true; }
         }
 
-        if (Par.Req.Version == "HTTP/1.0" && ConnectionHeader != "keep-alive")
+        if (CloseFlag)
         {
             RemoveConnection(Index);
             return;
         }
-        else if (ConnectionHeader == "close")
+        else if (KeepAliveFlag)
+        {
+            const std::string Remaining = Par.Buffer.substr(Par.Position);
+            Par = {};
+            Par.Buffer = Remaining;
+        }
+        else if (Par.Req.Version == "HTTP/1.1")
+        {
+            const std::string Remaining = Par.Buffer.substr(Par.Position);
+            Par = {};
+            Par.Buffer = Remaining;
+        }
+        else if (Par.Req.Version == "HTTP/1.0")
         {
             RemoveConnection(Index);
             return;
         }
-
-        Par = {};
+        else { Enforce(false, "Impossible state reached during connection closing decision"); }
     }
 }
 
@@ -267,6 +280,7 @@ void HTTP::Server::AddRoute(std::string Method, const std::string& Path, std::fu
     {
         std::cerr << "Invalid method provided, failed to add route\n";
         std::cerr << "Please check whether all methods are uppercase and valid, e.g. GET, POST, PATCH\n";
+        return;
     }
 
     std::string Key = Method + ":" + Path;
