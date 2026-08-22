@@ -72,15 +72,11 @@ void PPG::Server::Run()
         Enforce(PollFDList.size() == ConnectionList.size(), "Mapping wrong between PollFDList and ConnectionList");
         Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
 
-        for (size_t ConnectionIndex = ConnectionList.size() - 1; ConnectionIndex < MaxConnections; ConnectionIndex--)
+        for (size_t ConnectionIndex = ConnectionList.size(); ConnectionIndex-- > 0; )
         {
             if (PollFDList[ConnectionIndex].revents & (POLLIN | POLLHUP))
             {
-                if (ConnectionIndex == 0)
-                {
-                    HandleNewConnection();
-                    Enforce(ConnectionList.size() == PollFDList.size() + 1 || ConnectionList.size() == MaxConnections, "Wrong handling of new connection");
-                }
+                if (ConnectionIndex == 0) { HandleNewConnection(); }
                 else { HandleClientData(ConnectionIndex); }
             }
         }
@@ -168,9 +164,17 @@ void PPG::Server::HandleClientData(size_t Index)
         return;
     }
 
+    ConnectionList[Index].Par.Buffer += std::string(Data, NumBytes);
+    if (ConnectionList[Index].Par.Buffer.size() > MaxBufferSize)
+    {
+        // DDoS attack!
+        RemoveConnection(Index);
+        return;
+    }
+
     while (true)
     {
-        int Result = ConnectionList[Index].Par.Parse(std::string(Data, NumBytes));
+        int Result = ConnectionList[Index].Par.Parse();
 
         switch (Result)
         {
@@ -213,12 +217,14 @@ void PPG::Server::HandleClientData(size_t Index)
             }
             else if (KeepAliveFlag)
             {
+                Enforce(Par.Position <= Par.Buffer.size(), "Parser position exceeds parser buffer");
                 const std::string Remaining = Par.Buffer.substr(Par.Position);
                 Par = {};
                 Par.Buffer = Remaining;
             }
             else if (Par.Req.Version == "HTTP/1.1")
             {
+                Enforce(Par.Position <= Par.Buffer.size(), "Parser position exceeds parser buffer");
                 const std::string Remaining = Par.Buffer.substr(Par.Position);
                 Par = {};
                 Par.Buffer = Remaining;
@@ -239,6 +245,9 @@ void PPG::Server::HandleClientData(size_t Index)
 
 std::string PPG::Server::Stringify(const Response& Res)
 {
+    Enforce(Res.StatusCode != 0 && Res.Status != "" && Res.Body != "" && Res.Version != "",
+        "Default response should never be sent to any user ever");
+
     std::string Result = "";
     Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
 
@@ -250,7 +259,20 @@ std::string PPG::Server::Stringify(const Response& Res)
 
 void PPG::Server::ProcessRequest(size_t Index, const Request& Req)
 {
-    // TODO Implement this later
+    Enforce(Index > 0 && Index < ConnectionList.size(), "Invalid connection index");
+    Enforce(Req.Method != "" && Req.Path != "", "Invalid method or path");
+
+    const std::string Key = Req.Method + ":" + Req.Path;
+    auto It = Routes.find(Key);
+
+    if (It == Routes.end())
+    {
+        ResponseBuilder Builder{};
+        SendResponse(ConnectionList[Index].Socket.fd, Builder.NotFound().Build());
+        return;
+    }
+
+    SendResponse(ConnectionList[Index].Socket.fd, It->second(Req));
 }
 
 void PPG::Server::SendResponse(SOCKET ClientFD, const Response& Res)
@@ -279,6 +301,7 @@ void PPG::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 
 void PPG::Server::RemoveConnection(size_t Index)
 {
+    Enforce(Index > 0 && Index < MaxConnections, "Invariant broken inside RemoveConnections()");
     closesocket(ConnectionList[Index].Socket.fd);
     ConnectionList.erase(ConnectionList.begin() + Index);
 }

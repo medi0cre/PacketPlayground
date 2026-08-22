@@ -97,7 +97,7 @@ namespace PPG
         ~Parser() = default;
 
         void ParseURIComponents();
-        int Parse(const std::string& Data);
+        int Parse();
 
         ParseResult FinalizeHeaders();
 

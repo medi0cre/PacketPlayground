@@ -3,11 +3,8 @@
 #include <Utils.h>
 #include <Server.h>
 
-int PPG::Parser::Parse(const std::string& Data)
+int PPG::Parser::Parse()
 {
-    Buffer += Data;
-    if (Buffer.size() > MaxBufferSize) { return -1; }
-
     while (true)
     {
         ParseResult Result = ParseByState();
@@ -539,11 +536,24 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
 {
     bool CLFlag = false;
     bool TEFlag = false;
+    bool HostFlag = false;
     size_t CLIndex = 0;
     size_t TEIndex = 0;
+    size_t HostIndex = 0;
 
     for (size_t i = 0; i < Req.Headers.size(); i++)
     {
+        if (Req.Headers[i].Key == "host")
+        {
+            // Reject duplicate host headers
+            if (!HostFlag)
+            {
+                HostFlag = true;
+                HostIndex = i;
+            }
+            else { return ParseResult::Error; }
+        }
+
         if (Req.Headers[i].Key == "transfer-encoding")
         {
             // Reject duplicate transfer encoding headers
@@ -566,6 +576,9 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
             else { return ParseResult::Error; }
         }
     }
+
+    if ((Req.Version == "HTTP/1.1" && !HostFlag)
+        || (HostFlag && Req.Headers[HostIndex].Value == "")) { return ParseResult::Error; }
 
     if (CLFlag && TEFlag) { return ParseResult::Error; }
     else if (TEFlag)
