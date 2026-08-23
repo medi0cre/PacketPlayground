@@ -1,12 +1,12 @@
-#include <iostream>
 #include <algorithm>
 
 #include <Utils.h>
+#include <Logger.h>
 
 void Enforce(bool Condition, const char* Message)
 {
     if (Condition) { return; }
-    std::cerr << Message << "\n";
+    Logger::Get().Critical(Message);
     std::exit(EXIT_FAILURE);
 }
 

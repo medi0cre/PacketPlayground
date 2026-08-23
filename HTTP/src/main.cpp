@@ -1,8 +1,10 @@
 #include <Server.h>
 #include <ResponseBuilder.h>
+#include<Logger.h>
 
 int main()
 {
+    Logger::Get().SetLevel(LogLevel::LogTrace);
     PPG::Server* PPG = new PPG::Server("127.0.0.1", "8080");
 
     PPG->AddRoute("GET", "/", [](const PPG::Request& Req)

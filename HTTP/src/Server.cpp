@@ -1,7 +1,7 @@
-#include <iostream>
 #include <Utils.h>
 #include <Server.h>
 #include <ResponseBuilder.h>
+#include <Logger.h>
 
 PPG::Server::Server(const char* IPAddress, const char* Port)
 {
@@ -27,7 +27,7 @@ PPG::Server::Server(const char* IPAddress, const char* Port)
     {
         if ((ListenFD = socket(Info->ai_family, Info->ai_socktype, Info->ai_protocol)) == INVALID_SOCKET)
         {
-            std::cerr << "Invalid socket, trying the next one...\n";
+            Logger::Get().Warn("Invalid socket, trying the next one...");
             continue;
         }
 
@@ -37,11 +37,10 @@ PPG::Server::Server(const char* IPAddress, const char* Port)
         if (bind(ListenFD, Info->ai_addr, Info->ai_addrlen) == SOCKET_ERROR)
         {
             closesocket(ListenFD);
-            std::cerr << "Failed to bind socket, trying the next one...\n";
+            Logger::Get().Warn("Failed to bind socket, trying the next one...");
             continue;
         }
 
-        Enforce(Info != nullptr, "Error occured during port binding");
         break;
     }
 
@@ -59,7 +58,7 @@ PPG::Server::Server(const char* IPAddress, const char* Port)
 
 void PPG::Server::Run()
 {
-    std::cout << "Launching server. Waiting for new connections...\n";
+    Logger::Get().Info("Launching server. Waiting for new connections...");
 
     while (true)
     {
@@ -93,14 +92,14 @@ void PPG::Server::HandleNewConnection()
     NewFD = accept(ConnectionList[0].Socket.fd, reinterpret_cast<sockaddr*>(&RemoteAddr), &AddrLen);
     if (NewFD == INVALID_SOCKET)
     {
-        std::cerr << "Invalid file descriptor obtained from accept() call\n";
-        closesocket(NewFD);
+        Logger::Get().Error("Invalid file descriptor obtained from accept() call");
+        Logger::Get().Error("Error code: " + std::to_string(WSAGetLastError()));
         return;
     }
 
     if (ConnectionList.size() >= MaxConnections)
     {
-        std::cerr << "No room in poll buffer to add new connection\n";
+        Logger::Get().Error("Reached maximum connection limit, rejecting socket " + std::to_string(NewFD));
         closesocket(NewFD);
         return;
     }
@@ -140,8 +139,7 @@ void PPG::Server::HandleNewConnection()
     Enforce(Src != nullptr, "Src is null");
     inet_ntop(RemoteAddr.ss_family, Src, RemoteIP, sizeof(RemoteIP));
 
-    std::cout << "New connection from " << RemoteIP;
-    std::cout << " on socket " << NewFD << "\n";
+    Logger::Get().Info("New connection from " + std::string(RemoteIP) + " on socket " + std::to_string(NewFD));
 }
 
 void PPG::Server::HandleClientData(size_t Index)
@@ -150,14 +148,16 @@ void PPG::Server::HandleClientData(size_t Index)
 
     char Data[ReceiveBufferSize];
     int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, ReceiveBufferSize, 0);
+    Logger::Get().Debug("Received " + std::to_string(NumBytes) + " bytes on socket " + std::to_string(ConnectionList[Index].Socket.fd));
 
     if (NumBytes <= 0)
     {
-        if (NumBytes == 0) { std::cerr << "Socket " << ConnectionList[Index].Socket.fd << " closed the connection\n"; }
+        if (NumBytes == 0) { Logger::Get().Info("Socket " + std::to_string(ConnectionList[Index].Socket.fd) + " closed the connection"); }
         else
         {
-            std::cerr << "Error receiving message from socket " << ConnectionList[Index].Socket.fd << "\n";
-            std::cerr << "Error Code: " << WSAGetLastError() << "\n";
+            Logger::Get().Error("Error receiving message from socket "
+                + std::to_string(ConnectionList[Index].Socket.fd)
+                + "\nError Code: " + std::to_string(WSAGetLastError()));
         }
 
         RemoveConnection(Index);
@@ -168,6 +168,7 @@ void PPG::Server::HandleClientData(size_t Index)
     if (ConnectionList[Index].Par.Buffer.size() > MaxBufferSize)
     {
         // DDoS attack!
+        Logger::Get().Error("Exceeded buffer limit on socket " + std::to_string(ConnectionList[Index].Socket.fd));
         RemoveConnection(Index);
         return;
     }
@@ -175,13 +176,14 @@ void PPG::Server::HandleClientData(size_t Index)
     while (true)
     {
         int Result = ConnectionList[Index].Par.Parse();
+        Logger::Get().Debug("Parse result: " + std::to_string(Result) + " on socket " + std::to_string(ConnectionList[Index].Socket.fd));
 
         switch (Result)
         {
         case -1:
         {
             // Error: Send bad request and dip
-            std::cerr << "Bad request on socket " << ConnectionList[Index].Socket.fd << "\n";
+            Logger::Get().Error("Bad request on socket " + std::to_string(ConnectionList[Index].Socket.fd));
             ResponseBuilder Builder{};
             Response Res = Builder.BadRequest().Build();
             SendResponse(ConnectionList[Index].Socket.fd, Res);
@@ -191,6 +193,7 @@ void PPG::Server::HandleClientData(size_t Index)
         case 0:
         {
             // Need more data!
+            Logger::Get().Debug("Incomplete request on socket " + std::to_string(ConnectionList[Index].Socket.fd));
             return;
         }
         case 1:
@@ -205,6 +208,7 @@ void PPG::Server::HandleClientData(size_t Index)
             {
                 if (Par.Req.Headers[i].Key != "connection") { continue; }
                 std::string Value = ToLower(Par.Req.Headers[i].Value);
+                Logger::Get().Debug("Connection header found on socket " + std::to_string(ConnectionList[Index].Socket.fd));
 
                 if (Value.find("close") != std::string::npos) { CloseFlag = true; }
                 if (Value.find("keep-alive") != std::string::npos) { KeepAliveFlag = true; }
@@ -212,25 +216,45 @@ void PPG::Server::HandleClientData(size_t Index)
 
             if (CloseFlag)
             {
+                Logger::Get().Debug("Close header found on socket " + std::to_string(ConnectionList[Index].Socket.fd));
                 RemoveConnection(Index);
                 return;
             }
             else if (KeepAliveFlag)
             {
                 Enforce(Par.Position <= Par.Buffer.size(), "Parser position exceeds parser buffer");
+                Logger::Get().Debug("Keep alive header found on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+
                 const std::string Remaining = Par.Buffer.substr(Par.Position);
                 Par = {};
                 Par.Buffer = Remaining;
+                Logger::Get().Debug("Reset parser on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+
+                if (Par.Buffer.empty())
+                {
+                    Logger::Get().Debug("Returning because buffer empty on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+                    return;
+                }
             }
             else if (Par.Req.Version == "HTTP/1.1")
             {
+                Logger::Get().Debug("No HTTP/1.1 connection header on socket " + std::to_string(ConnectionList[Index].Socket.fd));
                 Enforce(Par.Position <= Par.Buffer.size(), "Parser position exceeds parser buffer");
+
                 const std::string Remaining = Par.Buffer.substr(Par.Position);
                 Par = {};
                 Par.Buffer = Remaining;
+                Logger::Get().Debug("Defaulting to keep alive on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+
+                if (Par.Buffer.empty())
+                {
+                    Logger::Get().Debug("Returning because buffer empty on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+                    return;
+                }
             }
             else if (Par.Req.Version == "HTTP/1.0")
             {
+                Logger::Get().Debug("No HTTP/1.0 connection header(default close) on socket " + std::to_string(ConnectionList[Index].Socket.fd));
                 RemoveConnection(Index);
                 return;
             }
@@ -245,14 +269,21 @@ void PPG::Server::HandleClientData(size_t Index)
 
 std::string PPG::Server::Stringify(const Response& Res)
 {
-    Enforce(Res.StatusCode != 0 && Res.Status != "" && Res.Body != "" && Res.Version != "",
-        "Default response should never be sent to any user ever");
+    Enforce(Res.StatusCode != 0 && Res.Status != "" && Res.Version != "", "Default response should never be sent to any user ever");
 
     std::string Result = "";
     Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
+    Logger::Get().Trace("Inside stringify, Version: " + Res.Version);
+    Logger::Get().Trace("Inside stringify, Status code: " + std::to_string(Res.StatusCode));
+    Logger::Get().Trace("Inside stringify, Status: " + Res.Status);
 
-    for (const auto& Header: Res.Headers) { Result += Header.Key + ": " + Header.Value + "\r\n"; }
+    for (const auto& Header: Res.Headers)
+    {
+        Logger::Get().Trace("Header, " + Header.Key + ": " + Header.Value);
+        Result += Header.Key + ": " + Header.Value + "\r\n";
+    }
 
+    Logger::Get().Trace("Body: " + Res.Body);
     Result += "\r\n" + Res.Body;
     return Result;
 }
@@ -261,17 +292,23 @@ void PPG::Server::ProcessRequest(size_t Index, const Request& Req)
 {
     Enforce(Index > 0 && Index < ConnectionList.size(), "Invalid connection index");
     Enforce(Req.Method != "" && Req.Path != "", "Invalid method or path");
+    Logger::Get().Debug("Processing request on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+    Logger::Get().Trace("Method: " + Req.Method);
+    Logger::Get().Trace("Path: " + Req.Path);
+    Logger::Get().Trace("Version: " + Req.Version);
 
     const std::string Key = Req.Method + ":" + Req.Path;
     auto It = Routes.find(Key);
 
     if (It == Routes.end())
     {
+        Logger::Get().Debug("No route found (404 error) on socket " + std::to_string(ConnectionList[Index].Socket.fd));
         ResponseBuilder Builder{};
         SendResponse(ConnectionList[Index].Socket.fd, Builder.NotFound().Build());
         return;
     }
 
+    Logger::Get().Debug("Route found on socket " + std::to_string(ConnectionList[Index].Socket.fd));
     SendResponse(ConnectionList[Index].Socket.fd, It->second(Req));
 }
 
@@ -282,27 +319,31 @@ void PPG::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 
     size_t TotalSent = 0;
     size_t Remaining = ResponseString.size();
+    Logger::Get().Trace("Send response size: " + std::to_string(Remaining));
 
     while (Remaining > 0)
     {
         int Sent = send(ClientFD, ResponseString.c_str() + TotalSent, Remaining, 0);
         if (Sent == SOCKET_ERROR)
         {
-            std::cerr << "Failed to send response: " << WSAGetLastError() << "\n";
+            Logger::Get().Error("Failed to send response: " + std::to_string(WSAGetLastError()));
             return;
         }
 
+        Logger::Get().Trace("Sent packet size: " + std::to_string(Sent));
         TotalSent += Sent;
         Remaining -= Sent;
     }
 
+    Logger::Get().Trace("Fully sent packet");
     Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response should always be fully sent unless there is a bug");
 }
 
 void PPG::Server::RemoveConnection(size_t Index)
 {
-    Enforce(Index > 0 && Index < MaxConnections, "Invariant broken inside RemoveConnections()");
-    closesocket(ConnectionList[Index].Socket.fd);
+    Enforce(Index > 0 && Index < ConnectionList.size(), "Invariant broken inside RemoveConnections()");
+    Logger::Get().Info("Removing socket " + std::to_string(ConnectionList[Index].Socket.fd));
+    if (ConnectionList[Index].Socket.fd != INVALID_SOCKET) { closesocket(ConnectionList[Index].Socket.fd); }
     ConnectionList.erase(ConnectionList.begin() + Index);
 }
 
@@ -310,20 +351,20 @@ void PPG::Server::AddRoute(std::string Method, const std::string& Path, std::fun
 {
     if (Path.size() == 0)
     {
-        std::cerr << "Empty path provided, failed to add route\n";
+        Logger::Get().Error("Empty path provided, failed to add route");
         return;
     }
 
     if (!IsValidMethod(Method))
     {
-        std::cerr << "Invalid method provided, failed to add route\n";
-        std::cerr << "Please check whether all methods are uppercase and valid, e.g. GET, POST, PATCH\n";
+        Logger::Get().Error("Invalid method provided, failed to add route");
+        Logger::Get().Error("Please check whether all methods are uppercase and valid, e.g. GET, POST, PATCH");
         return;
     }
 
     std::string Key = Method + ":" + Path;
     Routes[Key] = Dispatcher;
-    std::cout << "Added route: " << Method << " " << Path << "\n";
+    Logger::Get().Info("Added route: " + Method + " " + Path);
 }
 
 PPG::Server::~Server()
@@ -333,5 +374,6 @@ PPG::Server::~Server()
         if (ConnectionList[i].Socket.fd != INVALID_SOCKET) { closesocket(ConnectionList[i].Socket.fd); }
     }
 
+    Logger::Get().Info("Shutting down server");
     WSACleanup();
 }
