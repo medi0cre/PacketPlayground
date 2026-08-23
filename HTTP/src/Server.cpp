@@ -67,12 +67,25 @@ void PPG::Server::Run()
 
         for (size_t i = 0; i < ConnectionList.size(); i++) { PollFDList.emplace_back(ConnectionList[i].Socket); }
 
-        // Start polling with -1 timeout to poll forever
         Enforce(PollFDList.size() == ConnectionList.size(), "Mapping wrong between PollFDList and ConnectionList");
-        Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), -1) != SOCKET_ERROR, "Error occured during polling");
+        Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), MaxTimeout) != SOCKET_ERROR, "Error occured during polling");
 
         for (size_t ConnectionIndex = ConnectionList.size(); ConnectionIndex-- > 0; )
         {
+            if (ConnectionIndex != 0)
+            {
+                const Time Now = Clock::now();
+                const Time LastEvent = ConnectionList[ConnectionIndex].LastEvent;
+                const size_t IdleDuration = static_cast<size_t>(std::chrono::duration_cast<MS>(Now - LastEvent).count());
+
+                if (IdleDuration >= MaxTimeout)
+                {
+                    Logger::Get().Info("Timeout on socket " + std::to_string(ConnectionList[ConnectionIndex].Socket.fd));
+                    RemoveConnection(ConnectionIndex);
+                    continue;
+                }
+            }
+
             if (PollFDList[ConnectionIndex].revents & (POLLIN | POLLHUP))
             {
                 if (ConnectionIndex == 0) { HandleNewConnection(); }
@@ -110,6 +123,7 @@ void PPG::Server::HandleNewConnection()
     Client.Socket.events = POLLIN;
     Client.Socket.revents = 0;
     Client.Par.State = ParseState::RequestLineStart;
+    Client.LastEvent = Clock::now();
     ConnectionList.emplace_back(Client);
 
     // Find out the IP address string of the socket
@@ -164,7 +178,9 @@ void PPG::Server::HandleClientData(size_t Index)
         return;
     }
 
+    ConnectionList[Index].LastEvent = Clock::now();
     ConnectionList[Index].Par.Buffer += std::string(Data, NumBytes);
+
     if (ConnectionList[Index].Par.Buffer.size() > MaxBufferSize)
     {
         // DDoS attack!

@@ -10,6 +10,7 @@ add_executable(PPG
     src/Utils.cpp
     src/Parser.cpp
     src/ResponseBuilder.cpp
+    src/Logger.cpp
 )
 
 target_include_directories(PPG PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

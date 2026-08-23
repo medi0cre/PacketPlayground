@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <winsock2.h>
@@ -10,6 +11,11 @@
 constexpr size_t MaxConnections = 32;
 constexpr size_t MaxBufferSize = 32768;
 constexpr size_t ReceiveBufferSize = 8192;
+constexpr size_t MaxTimeout = 5000; // milliseconds
+
+using Clock = std::chrono::steady_clock;
+using Time = Clock::time_point;
+using MS = std::chrono::milliseconds;
 
 namespace PPG
 {
@@ -26,6 +32,7 @@ namespace PPG
     {
         WSAPOLLFD Socket{};
         Parser Par{};
+        Time LastEvent{};
     };
 
     class Server
