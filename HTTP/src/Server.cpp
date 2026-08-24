@@ -318,13 +318,13 @@ void PPG::Server::ProcessRequest(size_t Index, const Request& Req)
 
     if (It == Routes.end())
     {
-        Logger::Get().Debug("No route found (404 error) on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+        Logger::Get().Warn("No route found (404 error) on socket " + std::to_string(ConnectionList[Index].Socket.fd));
         ResponseBuilder Builder{};
         SendResponse(ConnectionList[Index].Socket.fd, Builder.NotFound().Build());
         return;
     }
 
-    Logger::Get().Debug("Route found on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+    Logger::Get().Info("Route found on socket " + std::to_string(ConnectionList[Index].Socket.fd));
     SendResponse(ConnectionList[Index].Socket.fd, It->second(Req));
 }
 
