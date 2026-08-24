@@ -1,13 +1,14 @@
-#include <iostream>
 #include <Parser.h>
 #include <Utils.h>
 #include <Server.h>
+#include <Logger.h>
 
 int PPG::Parser::Parse()
 {
     while (true)
     {
         ParseResult Result = ParseByState();
+        Logger::Get().Trace("ParseResult " + std::to_string(Result) + " on state " + std::to_string(State));
 
         switch (Result)
         {
@@ -520,16 +521,19 @@ void PPG::Parser::ParseURIComponents()
     size_t QuestionMarkPosition = Req.URI.find('?');
     if (QuestionMarkPosition != std::string::npos)
     {
+        Logger::Get().Trace("URI contains a query");
         Req.Path = Req.URI.substr(0, QuestionMarkPosition);
         Req.Query = Req.URI.substr(QuestionMarkPosition + 1);
     }
     else
     {
+        Logger::Get().Trace("URI does not contain a query");
         Req.Path = Req.URI;
         Req.Query = "";
     }
 
     Req.Path = URLDecode(Req.Path);
+    Logger::Get().Trace("Decoded URL: " + Req.Path);
 }
 
 PPG::ParseResult PPG::Parser::FinalizeHeaders()
@@ -616,7 +620,7 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
         }
         catch (const std::exception& E)
         {
-            std::cerr << "Error while converting from string to integer: " << E.what() << "\n";
+            Logger::Get().Error("Error while converting from string to integer: " + std::string(E.what()));
             return ParseResult::Error;
         }
     }
