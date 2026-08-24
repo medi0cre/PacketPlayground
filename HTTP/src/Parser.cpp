@@ -8,7 +8,7 @@ int PPG::Parser::Parse()
     while (true)
     {
         ParseResult Result = ParseByState();
-        Logger::Get().Trace("ParseResult " + std::to_string(Result) + " on state " + std::to_string(State));
+        Logger::Get().Trace("ParseResult: " + std::to_string(Result) + ", Current state: " + std::to_string(State));
 
         switch (Result)
         {
