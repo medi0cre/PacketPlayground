@@ -2,6 +2,7 @@
 #include <Utils.h>
 #include <Server.h>
 #include <Logger.h>
+#include <charconv>
 
 int PPG::Parser::Parse()
 {
@@ -82,7 +83,7 @@ PPG::ParseResult PPG::Parser::ParseRequestLineMethod()
         char Byte = Buffer[Position];
         if (Byte == ' ')
         {
-            Req.Method = Buffer.substr(MethodStart, Position - MethodStart);
+            Req.Method = std::string_view(Buffer.data() + MethodStart, Position - MethodStart);
             if (!IsValidMethod(Req.Method)) { return ParseResult::Error; }
 
             Position++;
@@ -108,7 +109,7 @@ PPG::ParseResult PPG::Parser::ParseRequestLineURI()
         char Byte = Buffer[Position];
         if (Byte == ' ')
         {
-            Req.URI = Buffer.substr(URIStart, Position - URIStart);
+            Req.URI = std::string_view(Buffer.data() + URIStart, Position - URIStart);
 
             if (!IsValidURI(Req.URI)) { return ParseResult::Error; }
             ParseURIComponents();
@@ -136,7 +137,7 @@ PPG::ParseResult PPG::Parser::ParseRequestLineVersion()
         char Byte = Buffer[Position];
         if (Byte == '\r')
         {
-            Req.Version = Buffer.substr(VersionStart, Position - VersionStart);
+            Req.Version = std::string_view(Buffer.data() + VersionStart, Position - VersionStart);
             if (!IsValidHTTPVersion(Req.Version)) { return ParseResult::Error; }
 
             State = ParseState::RequestLineCRLF;
@@ -183,8 +184,8 @@ PPG::ParseResult PPG::Parser::ParseHeaderName()
         char Byte = Buffer[Position];
         if (Byte == ':')
         {
-            CurrentHeaderName = ToLower(Buffer.substr(NameStart, Position - NameStart));
-            if (!IsValidToken(CurrentHeaderName)) { return ParseResult::Error; }
+            CurrentHeader.Key = std::string_view(Buffer.data() + NameStart, Position - NameStart); // Make lowercase somehow?
+            if (!IsValidToken(CurrentHeader.Key)) { return ParseResult::Error; }
 
             Position++;
             State = ParseState::HeaderValueStart;
@@ -222,7 +223,9 @@ PPG::ParseResult PPG::Parser::ParseHeaderValue()
         char Byte = Buffer[Position];
         if (Byte == '\r')
         {
-            CurrentHeaderValue = TrimTrailingWhiteSpace(Buffer.substr(ValueStart, Position - ValueStart));
+            CurrentHeader.Value = std::string_view(Buffer.data() + ValueStart, Position - ValueStart);
+            TrimTrailingWhiteSpace(CurrentHeader.Value);
+
             State = ParseState::HeaderValueCRLF;
             return ParseResult::OK;
         }
@@ -240,11 +243,10 @@ PPG::ParseResult PPG::Parser::ParseHeaderValueCRLF()
         if (Buffer[Position] == '\r' && Buffer[Position + 1] == '\n')
         {
             Position += 2;
-            Req.Headers.emplace_back(KV { CurrentHeaderName, CurrentHeaderValue });
+            Req.Headers.emplace_back(CurrentHeader);
             if (Req.Headers.size() > MaxHeaderCount) { return ParseResult::Error; }
 
-            CurrentHeaderName = "";
-            CurrentHeaderValue = "";
+            CurrentHeader = {};
             State = ParseState::HeaderName;
             return ParseResult::OK;
         }
@@ -271,28 +273,21 @@ PPG::ParseResult PPG::Parser::ParseHeaderEndCRLF()
 
 PPG::ParseResult PPG::Parser::ParseBodyFixedLength()
 {
-    if (BytesRemaining <= 0)
+    if (Req.ContentLength > MaxBodySize) { return ParseResult::Error; }
+
+    if (Req.ContentLength == 0)
     {
         State = ParseState::ParseComplete;
         return ParseResult::Complete;
     }
 
-    size_t Available = Buffer.size() - Position;
-    size_t ToRead = std::min(Available, BytesRemaining);
+    if (Buffer.size() - Position < Req.ContentLength) { return ParseResult::Incomplete; }
 
-    Req.Body += Buffer.substr(Position, ToRead);
-    if (Req.Body.size() > MaxBodySize) { return ParseResult::Error; }
+    Req.Body = std::string_view(Buffer.data() + Position, Req.ContentLength);
+    Position += Req.ContentLength;
 
-    Position += ToRead;
-    BytesRemaining -= ToRead;
-
-    if (BytesRemaining <= 0)
-    {
-        State = ParseState::ParseComplete;
-        return ParseResult::Complete;
-    }
-
-    return ParseResult::Incomplete;
+    State = ParseState::ParseComplete;
+    return ParseResult::Complete;
 }
 
 PPG::ParseResult PPG::Parser::ParseChunkSize()
@@ -305,8 +300,7 @@ PPG::ParseResult PPG::Parser::ParseChunkSize()
         if (IsHexDigit(Byte)) { Position++; }
         else if (Byte == '\r')
         {
-            std::string HexString = Buffer.substr(SizeStart, Position - SizeStart);
-            long long HexSize = ParseHex(HexString);
+            long long HexSize = ParseHex(std::string_view(Buffer.data() + SizeStart, Position - SizeStart));
 
             if (HexSize < 0 || static_cast<size_t>(HexSize) > MaxChunkSize) { return ParseResult::Error; }
             else { CurrentChunk.Size = HexSize; }
@@ -316,8 +310,7 @@ PPG::ParseResult PPG::Parser::ParseChunkSize()
         }
         else if (Byte == ';')
         {
-            std::string HexString = Buffer.substr(SizeStart, Position - SizeStart);
-            long long HexSize = ParseHex(HexString);
+            long long HexSize = ParseHex(std::string_view(Buffer.data() + SizeStart, Position - SizeStart));
 
             if (HexSize < 0 || static_cast<size_t>(HexSize) > MaxChunkSize) { return ParseResult::Error; }
             else { CurrentChunk.Size = HexSize; }
@@ -358,15 +351,10 @@ PPG::ParseResult PPG::Parser::ParseChunkSizeCRLF()
         if (Buffer[Position] == '\r' && Buffer[Position + 1] == '\n')
         {
             Position += 2;
-            if (CurrentChunk.Size == 0)
-            {
-                CurrentChunk.IsFinal = true;
-                State = ParseState::BodyChunkTrailerName;
-            }
+            if (CurrentChunk.Size == 0) { State = ParseState::BodyChunkTrailerName; }
             else
             {
-                CurrentChunk.BytesRead = 0;
-                CurrentChunk.Data = "";
+                CurrentChunk = {};
                 State = ParseState::BodyChunkData;
             }
 
@@ -380,24 +368,14 @@ PPG::ParseResult PPG::Parser::ParseChunkSizeCRLF()
 
 PPG::ParseResult PPG::Parser::ParseChunkData()
 {
-    size_t Available = Buffer.size() - Position;
-    size_t Needed = CurrentChunk.Size - CurrentChunk.BytesRead;
-    size_t ToRead = std::min(Available, Needed);
+    // No need for boundary checks since both size == 0 and limit exceeded were checked in previous states
+    if (Buffer.size() - Position < CurrentChunk.Size) { return ParseResult::Incomplete; }
 
-    CurrentChunk.Data += Buffer.substr(Position, ToRead);
-    ChunkedBody += Buffer.substr(Position, ToRead);
-    if (ChunkedBody.size() > MaxBodySize) { return ParseResult::Error; }
+    Req.ChunkedBody.emplace_back(std::string_view(Buffer.data() + Position, CurrentChunk.Size));
+    Position += CurrentChunk.Size;
 
-    Position += ToRead;
-    CurrentChunk.BytesRead += ToRead;
-
-    if (CurrentChunk.BytesRead >= CurrentChunk.Size)
-    {
-        State = ParseState::BodyChunkDataCRLF;
-        return ParseResult::OK;
-    }
-
-    return ParseResult::Incomplete;
+    State = ParseState::BodyChunkDataCRLF;
+    return ParseResult::OK;
 }
 
 PPG::ParseResult PPG::Parser::ParseChunkDataCRLF()
@@ -435,8 +413,8 @@ PPG::ParseResult PPG::Parser::ParseChunkTrailerName()
         char Byte = Buffer[Position];
         if (Byte == ':')
         {
-            CurrentTrailerName = ToLower(Buffer.substr(NameStart, Position - NameStart));
-            if (!IsValidToken(CurrentTrailerName)) { return ParseResult::Error; }
+            CurrentTrailer.Key = std::string_view(Buffer.data() + NameStart, Position - NameStart); // Make lowercase
+            if (!IsValidToken(CurrentTrailer.Key)) { return ParseResult::Error; }
 
             Position++;
             State = ParseState::BodyChunkTrailerValue;
@@ -467,7 +445,9 @@ PPG::ParseResult PPG::Parser::ParseChunkTrailerValue()
         char Byte = Buffer[Position];
         if (Byte == '\r')
         {
-            CurrentTrailerValue = TrimTrailingWhiteSpace(Buffer.substr(ValueStart, Position - ValueStart));
+            CurrentTrailer.Value = std::string_view(Buffer.data() + ValueStart, Position - ValueStart);
+            TrimTrailingWhiteSpace(CurrentTrailer.Value);
+
             State = ParseState::BodyChunkTrailerCRLF;
             return ParseResult::OK;
         }
@@ -485,11 +465,10 @@ PPG::ParseResult PPG::Parser::ParseChunkTrailerCRLF()
         if (Buffer[Position] == '\r' && Buffer[Position + 1] == '\n')
         {
             Position += 2;
-            Req.Trailers.emplace_back(KV { CurrentTrailerName, CurrentTrailerValue });
+            Req.Trailers.emplace_back(CurrentTrailer);
             if (Req.Trailers.size() > MaxTrailerCount) { return ParseResult::Error; }
 
-            CurrentTrailerName = "";
-            CurrentTrailerValue = "";
+            CurrentTrailer = {};
             State = ParseState::BodyChunkTrailerName;
             return ParseResult::OK;
         }
@@ -506,7 +485,6 @@ PPG::ParseResult PPG::Parser::ParseChunkFinalCRLF()
         if (Buffer[Position] == '\r' && Buffer[Position + 1] == '\n')
         {
             Position += 2;
-            Req.Body = ChunkedBody;
             State = ParseState::ParseComplete;
             return ParseResult::Complete;
         }
@@ -532,8 +510,8 @@ void PPG::Parser::ParseURIComponents()
         Req.Query = "";
     }
 
-    Req.Path = URLDecode(Req.Path);
-    Logger::Get().Trace("Decoded URL: " + Req.Path);
+    // Req.Path = URLDecode(Req.Path);
+    // Logger::Get().Trace("Decoded URL: " + Req.Path);
 }
 
 PPG::ParseResult PPG::Parser::FinalizeHeaders()
@@ -547,7 +525,7 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
 
     for (size_t i = 0; i < Req.Headers.size(); i++)
     {
-        if (Req.Headers[i].Key == "host")
+        if (CompareInsensitive(Req.Headers[i].Key, "host"))
         {
             // Reject duplicate host headers
             if (!HostFlag)
@@ -558,7 +536,7 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
             else { return ParseResult::Error; }
         }
 
-        if (Req.Headers[i].Key == "transfer-encoding")
+        if (CompareInsensitive(Req.Headers[i].Key, "transfer-encoding"))
         {
             // Reject duplicate transfer encoding headers
             if (!TEFlag)
@@ -569,7 +547,7 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
             else { return ParseResult::Error; }
         }
 
-        if (Req.Headers[i].Key == "content-length")
+        if (CompareInsensitive(Req.Headers[i].Key, "content-length"))
         {
             // Reject duplicate content length headers
             if (!CLFlag)
@@ -589,10 +567,9 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
     {
         // For now we only deal with chunked encoding for the HTTP 1.1 server
         // Whether we upgrade later to include gzip is still undecided
-        std::string TransferEncoding = ToLower(Req.Headers[TEIndex].Value);
-        if (TransferEncoding == "chunked")
+        std::string_view TransferEncoding = Req.Headers[TEIndex].Value;
+        if (CompareInsensitive(TransferEncoding, "chunked"))
         {
-            Req.IsChunked = true;
             State = ParseState::BodyChunkSize;
             return ParseResult::OK;
         }
@@ -602,10 +579,15 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
     {
         try
         {
-            long long Length = std::stoll(Req.Headers[CLIndex].Value);
-            if (Length < 0) { return ParseResult::Error; }
-            Req.ContentLength = Length;
+            long long Length = 0;
+            auto [Ptr, Err] = std::from_chars(Req.Headers[CLIndex].Value.data(),
+                    Req.Headers[CLIndex].Value.data() + Req.Headers[CLIndex].Value.size(),
+                    Length);
 
+            if (Err != std::errc{} || Ptr != (Req.Headers[CLIndex].Value.data() + Req.Headers[CLIndex].Value.size())) { return ParseResult::Error; }
+            if (Length < 0) { return ParseResult::Error; }
+
+            Req.ContentLength = Length;
             if (Req.ContentLength == 0)
             {
                 State = ParseState::ParseComplete;
@@ -613,7 +595,6 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
             }
             else
             {
-                BytesRemaining = Req.ContentLength;
                 State = ParseState::BodyFixedLength;
                 return ParseResult::OK;
             }

@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <string_view>
 #include <vector>
 
 constexpr size_t MaxChunkExtensionSize = 1024;
@@ -52,45 +53,39 @@ namespace PPG
 
     struct KV
     {
-        std::string Key = "";
-        std::string Value = "";
+        std::string_view Key;
+        std::string_view Value;
     };
 
     struct Request
     {
-        std::string Method = "";
-        std::string URI = "";
-        std::string Path = "";
-        std::string Query = "";
-        std::string Version = "";
-        std::vector<KV> Headers{};
-        std::vector<KV> Trailers{};
-        std::string Body = "";
+        std::string_view Method;
+        std::string_view URI;
+        std::string_view Path;
+        std::string_view Query;
+        std::string_view Version;
+        std::vector<KV> Headers;
+        std::vector<KV> Trailers;
+        std::string_view Body;
         size_t ContentLength = 0;
-        bool IsChunked = false;
+        std::vector<std::string_view> ChunkedBody;
     };
 
     struct Chunk
     {
         size_t Size = 0;
-        size_t BytesRead = 0;
-        bool IsFinal = false;
-        std::string Data = "";
+        std::string_view Data;
     };
 	
 	class Parser
     {
     public:
         size_t Position = 0;
-        size_t BytesRemaining = 0;
         Request Req{};
         ParseState State = ParseState::RequestLineStart;
         std::string Buffer = "";
-        std::string CurrentHeaderName = "";
-        std::string CurrentHeaderValue = "";
-        std::string CurrentTrailerName = "";
-        std::string CurrentTrailerValue = "";
-        std::string ChunkedBody = "";
+        KV CurrentHeader{};
+        KV CurrentTrailer{};
         Chunk CurrentChunk{};
 
         Parser() = default;

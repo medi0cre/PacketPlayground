@@ -1,6 +1,5 @@
-#include <algorithm>
-
 #include <Utils.h>
+#include <cstring>
 #include <Logger.h>
 
 void Enforce(bool Condition, const char* Message)
@@ -10,18 +9,7 @@ void Enforce(bool Condition, const char* Message)
     std::exit(EXIT_FAILURE);
 }
 
-std::string ToLower(std::string Str)
-{
-    std::transform(Str.begin(), Str.end(), Str.begin(),
-    [](unsigned char Character)
-    {
-        return std::tolower(Character);
-    });
-
-    return Str;
-}
-
-bool IsValidToken(const std::string& Token)
+bool IsValidToken(const std::string_view& Token)
 {
     if (Token.size() == 0) { return false; }
 
@@ -42,7 +30,7 @@ bool IsValidToken(const std::string& Token)
 }
 
 // This function still needs a lot of work
-bool IsValidURI(const std::string& URI)
+bool IsValidURI(const std::string_view& URI)
 {
     if (URI.size() == 0) { return false; }
 
@@ -61,9 +49,9 @@ bool IsValidURI(const std::string& URI)
     return true;
 }
 
-bool IsValidHTTPVersion(const std::string& Version)
+bool IsValidHTTPVersion(const std::string_view& Version)
 {
-    return (Version == "HTTP/1.0" || Version == "HTTP/1.1");
+    return Version == "HTTP/1.0" || Version == "HTTP/1.1";
 }
 
 bool IsHexDigit(const char C)
@@ -71,9 +59,9 @@ bool IsHexDigit(const char C)
     return ((C >= '0' && C <= '9') || (C >= 'a' && C <= 'f') || (C >= 'A' && C <= 'F'));
 }
 
-long long ParseHex(const std::string& Hex)
+long long ParseHex(const std::string_view& Hex)
 {
-    if (Hex.size() == 0) { return -1; }
+    if (Hex.size() == 0 || Hex.size() > 8) { return -1; }
 
     long long Value = 0;
     for (size_t i = 0; i < Hex.size(); i++)
@@ -91,8 +79,7 @@ long long ParseHex(const std::string& Hex)
     return Value;
 }
 
-// Minor improvements needed
-std::string URLDecode(const std::string& Encoded)
+std::string URLDecode(const std::string_view& Encoded)
 {
     std::string Result = "";
     size_t i = 0;
@@ -103,25 +90,27 @@ std::string URLDecode(const std::string& Encoded)
         {
             if (i + 2 < Encoded.size())
             {
-                std::string HexByte = Encoded.substr(i + 1, 2);
                 if (IsHexDigit(Encoded[i + 1]) && IsHexDigit(Encoded[i + 2]))
                 {
-                    int ByteValue = ParseHex(HexByte);
-                    Result += std::to_string(ByteValue);
+                    long long ByteValue = ParseHex(Encoded.substr(i + 1, 2));
+                    if (ByteValue < 0 || ByteValue > 0xFF) { return ""; }
+
+                    Result.push_back(static_cast<char>(ByteValue));
                     i += 3;
                     continue;
                 }
             }
         }
 
-        Result += Encoded[i];
+        Result.push_back(Encoded[i]);
         i++;
     }
 
     return Result;
 }
 
-bool IsValidMethod(const std::string& Method)
+
+bool IsValidMethod(const std::string_view& Method)
 {
     return Method == "GET"
         || Method == "POST"
@@ -131,13 +120,27 @@ bool IsValidMethod(const std::string& Method)
         || Method == "PUT"
         || Method == "CONNECT"
         || Method == "OPTIONS"
-        || Method == "TRACE"
-        || Method == "PATCH";
+        || Method == "TRACE";
 }
 
-std::string TrimTrailingWhiteSpace(const std::string& String)
+void TrimTrailingWhiteSpace(std::string_view& String)
 {
-    const size_t End = String.find_last_not_of(" \n\t\r");
-    if (End == std::string::npos) { return ""; }
-    return String.substr(0, End + 1);
+    while (!String.empty())
+    {
+        char C = String.back();
+        if (C != ' ' && C != '\t' && C != '\r' && C != '\n') { break; }
+        String.remove_suffix(1);
+    }
+}
+
+bool CompareInsensitive(const std::string_view& View, const char* String)
+{
+    if (View.size() != strlen(String)) { return false; }
+
+    for (size_t i = 0; i < View.size(); i++)
+    {
+        if (std::tolower(View[i]) != std::tolower(String[i])) { return false; }
+    }
+
+    return true;
 }
