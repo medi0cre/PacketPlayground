@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-#define Reset "\033[0m"
+#define Normal "\033[0m"
 #define Gray "\033[90m"
 #define Blue "\033[94m"
 #define Green "\033[92m"

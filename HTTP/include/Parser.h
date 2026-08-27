@@ -91,9 +91,9 @@ namespace PPG
         Parser() = default;
         ~Parser() = default;
 
-        void ParseURIComponents();
         int Parse();
-
+        void ParseURIComponents();
+        void Reset();
         ParseResult FinalizeHeaders();
 
         ParseResult ParseByState();

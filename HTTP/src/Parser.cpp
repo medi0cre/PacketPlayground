@@ -609,3 +609,12 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
     State = ParseState::ParseComplete;
     return ParseResult::Complete;
 }
+
+void PPG::Parser::Reset()
+{
+    Req = {};
+    CurrentHeader = {};
+    CurrentTrailer = {};
+    CurrentChunk = {};
+    State = ParseState::RequestLineStart;
+}
