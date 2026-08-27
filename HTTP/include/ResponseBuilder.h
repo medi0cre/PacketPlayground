@@ -1,5 +1,6 @@
 #pragma once
 #include <Server.h>
+#include <string_view>
 
 namespace PPG
 {
@@ -14,11 +15,11 @@ namespace PPG
 
         Response Build();
         ResponseBuilder& Reset();
-        ResponseBuilder& Version(const std::string& Version);
+        ResponseBuilder& Version(const std::string_view& Version);
         ResponseBuilder& StatusCode(uint16_t StatusCode);
-        ResponseBuilder& Status(const std::string& Status);
-        ResponseBuilder& Body(const std::string& Body);
-        ResponseBuilder& Header(const std::string& Key, const std::string& Value);
+        ResponseBuilder& Status(const std::string_view& Status);
+        ResponseBuilder& Body(const std::string_view& Body);
+        ResponseBuilder& Header(const std::string_view& Key, const std::string_view& Value);
 
         ResponseBuilder& NotFound();
         ResponseBuilder& BadRequest();

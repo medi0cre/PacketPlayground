@@ -13,7 +13,7 @@ PPG::ResponseBuilder& PPG::ResponseBuilder::Reset()
     return *this;
 }
 
-PPG::ResponseBuilder& PPG::ResponseBuilder::Version(const std::string& Version)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Version(const std::string_view& Version)
 {
     Res.Version = Version;
     return *this;
@@ -25,19 +25,19 @@ PPG::ResponseBuilder& PPG::ResponseBuilder::StatusCode(uint16_t StatusCode)
     return *this;
 }
 
-PPG::ResponseBuilder& PPG::ResponseBuilder::Status(const std::string& Status)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Status(const std::string_view& Status)
 {
     Res.Status = Status;
     return *this;
 }
 
-PPG::ResponseBuilder& PPG::ResponseBuilder::Body(const std::string& Body)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Body(const std::string_view& Body)
 {
     Res.Body = Body;
     return *this;
 }
 
-PPG::ResponseBuilder& PPG::ResponseBuilder::Header(const std::string& Key, const std::string& Value)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Header(const std::string_view& Key, const std::string_view& Value)
 {
     Res.Headers.emplace_back(KV { Key, Value });
     return *this;
