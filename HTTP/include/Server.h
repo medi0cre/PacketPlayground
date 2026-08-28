@@ -19,12 +19,18 @@ using MS = std::chrono::milliseconds;
 
 namespace PPG
 {
+    struct StringKV
+    {
+        std::string Key = "";
+        std::string Value = "";
+    };
+
     struct Response
     {
         uint16_t StatusCode = 0;
         std::string Status = "";
         std::string Version = "";
-        std::vector<KV> Headers{};
+        std::vector<StringKV> Headers{};
         std::string Body = "";
     };
 
@@ -52,6 +58,6 @@ namespace PPG
         Server(const char* IPAddress, const char* Port);
         ~Server();
         void Run();
-        void AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher);
+        void AddRoute(std::string_view Method, std::string_view Path, std::function<Response(const Request&)> Dispatcher);
     };
 }

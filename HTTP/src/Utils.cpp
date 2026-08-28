@@ -9,7 +9,7 @@ void Enforce(bool Condition, const char* Message)
     std::exit(EXIT_FAILURE);
 }
 
-bool IsValidToken(const std::string_view& Token)
+bool IsValidToken(std::string_view Token)
 {
     if (Token.size() == 0) { return false; }
 
@@ -30,7 +30,7 @@ bool IsValidToken(const std::string_view& Token)
 }
 
 // This function still needs a lot of work
-bool IsValidURI(const std::string_view& URI)
+bool IsValidURI(std::string_view URI)
 {
     if (URI.size() == 0) { return false; }
 
@@ -49,7 +49,7 @@ bool IsValidURI(const std::string_view& URI)
     return true;
 }
 
-bool IsValidHTTPVersion(const std::string_view& Version)
+bool IsValidHTTPVersion(std::string_view Version)
 {
     return Version == "HTTP/1.0" || Version == "HTTP/1.1";
 }
@@ -59,7 +59,7 @@ bool IsHexDigit(const char C)
     return ((C >= '0' && C <= '9') || (C >= 'a' && C <= 'f') || (C >= 'A' && C <= 'F'));
 }
 
-long long ParseHex(const std::string_view& Hex)
+long long ParseHex(std::string_view Hex)
 {
     if (Hex.size() == 0 || Hex.size() > 8) { return -1; }
 
@@ -79,7 +79,7 @@ long long ParseHex(const std::string_view& Hex)
     return Value;
 }
 
-std::string URLDecode(const std::string_view& Encoded)
+std::string URLDecode(std::string_view Encoded)
 {
     std::string Result = "";
     size_t i = 0;
@@ -110,7 +110,7 @@ std::string URLDecode(const std::string_view& Encoded)
 }
 
 
-bool IsValidMethod(const std::string_view& Method)
+bool IsValidMethod(std::string_view Method)
 {
     return Method == "GET"
         || Method == "POST"
@@ -133,7 +133,7 @@ void TrimTrailingWhiteSpace(std::string_view& String)
     }
 }
 
-bool CompareInsensitive(const std::string_view& View, const char* String)
+bool CompareInsensitive(std::string_view View, const char* String)
 {
     if (View.size() != strlen(String)) { return false; }
 

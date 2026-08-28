@@ -53,28 +53,28 @@ namespace PPG
 
     struct KV
     {
-        std::string_view Key;
-        std::string_view Value;
+        std::string_view Key = "";
+        std::string_view Value = "";
     };
 
     struct Request
     {
-        std::string_view Method;
-        std::string_view URI;
-        std::string_view Path;
-        std::string_view Query;
-        std::string_view Version;
-        std::vector<KV> Headers;
-        std::vector<KV> Trailers;
-        std::string_view Body;
+        std::string_view Method = "";
+        std::string_view URI = "";
+        std::string_view Path = "";
+        std::string_view Query = "";
+        std::string_view Version = "";
+        std::vector<KV> Headers{};
+        std::vector<KV> Trailers{};
+        std::string_view Body = "";
         size_t ContentLength = 0;
-        std::vector<std::string_view> ChunkedBody;
+        std::vector<std::string_view> ChunkedBody{};
     };
 
     struct Chunk
     {
         size_t Size = 0;
-        std::string_view Data;
+        std::string_view Data = "";
     };
 	
 	class Parser

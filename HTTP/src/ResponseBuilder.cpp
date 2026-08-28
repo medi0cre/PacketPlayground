@@ -2,8 +2,8 @@
 
 PPG::Response PPG::ResponseBuilder::Build()
 {
-    Res.Headers.emplace_back(KV { "Server", "PacketPlayground" });
-    Res.Headers.emplace_back(KV { "Content-Length", std::to_string(Res.Body.size()) });
+    Res.Headers.emplace_back(StringKV { "Server", "PacketPlayground" });
+    Res.Headers.emplace_back(StringKV { "Content-Length", std::to_string(Res.Body.size()) });
     return Res;
 }
 
@@ -13,7 +13,7 @@ PPG::ResponseBuilder& PPG::ResponseBuilder::Reset()
     return *this;
 }
 
-PPG::ResponseBuilder& PPG::ResponseBuilder::Version(const std::string_view& Version)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Version(std::string_view Version)
 {
     Res.Version = Version;
     return *this;
@@ -25,27 +25,27 @@ PPG::ResponseBuilder& PPG::ResponseBuilder::StatusCode(uint16_t StatusCode)
     return *this;
 }
 
-PPG::ResponseBuilder& PPG::ResponseBuilder::Status(const std::string_view& Status)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Status(std::string_view Status)
 {
     Res.Status = Status;
     return *this;
 }
 
-PPG::ResponseBuilder& PPG::ResponseBuilder::Body(const std::string_view& Body)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Body(std::string_view Body)
 {
     Res.Body = Body;
     return *this;
 }
 
-PPG::ResponseBuilder& PPG::ResponseBuilder::Header(const std::string_view& Key, const std::string_view& Value)
+PPG::ResponseBuilder& PPG::ResponseBuilder::Header(std::string_view Key, std::string_view Value)
 {
-    Res.Headers.emplace_back(KV { Key, Value });
+    Res.Headers.emplace_back(StringKV { std::string(Key), std::string(Value) });
     return *this;
 }
 
 PPG::ResponseBuilder& PPG::ResponseBuilder::NotFound()
 {
-    const std::string NotFoundBody = "<html>"
+    const std::string_view NotFoundBody = "<html>"
                                        "<head><title>404 Not Found</title></head>"
                                        "<body>"
                                          "<h1>404 Not Found</h1>"
@@ -67,7 +67,7 @@ PPG::ResponseBuilder& PPG::ResponseBuilder::NotFound()
 
 PPG::ResponseBuilder& PPG::ResponseBuilder::BadRequest()
 {
-    const std::string BadRequestBody = "<html>"
+    const std::string_view BadRequestBody = "<html>"
                                          "<head><title>400 Bad Request</title></head>"
                                          "<body>"
                                            "<h1>400 Bad Request</h1>"

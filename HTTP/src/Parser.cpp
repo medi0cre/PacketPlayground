@@ -9,7 +9,6 @@ int PPG::Parser::Parse()
     while (true)
     {
         ParseResult Result = ParseByState();
-        Logger::Get().Trace("ParseResult: " + std::to_string(Result) + ", Current state: " + std::to_string(State));
 
         switch (Result)
         {
@@ -184,7 +183,7 @@ PPG::ParseResult PPG::Parser::ParseHeaderName()
         char Byte = Buffer[Position];
         if (Byte == ':')
         {
-            CurrentHeader.Key = std::string_view(Buffer.data() + NameStart, Position - NameStart); // Make lowercase somehow?
+            CurrentHeader.Key = std::string_view(Buffer.data() + NameStart, Position - NameStart);
             if (!IsValidToken(CurrentHeader.Key)) { return ParseResult::Error; }
 
             Position++;
@@ -413,7 +412,7 @@ PPG::ParseResult PPG::Parser::ParseChunkTrailerName()
         char Byte = Buffer[Position];
         if (Byte == ':')
         {
-            CurrentTrailer.Key = std::string_view(Buffer.data() + NameStart, Position - NameStart); // Make lowercase
+            CurrentTrailer.Key = std::string_view(Buffer.data() + NameStart, Position - NameStart);
             if (!IsValidToken(CurrentTrailer.Key)) { return ParseResult::Error; }
 
             Position++;

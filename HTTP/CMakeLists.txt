@@ -21,5 +21,24 @@ target_compile_options(PPG PRIVATE
         -Wall
         -Wextra
         -Wpedantic
-        #-Werror
+        -Wconversion
+        -Wsign-conversion
+        -Wshadow
+        -Wcast-align
+        -Wcast-qual
+        -Wformat=2
+        -Wnull-dereference
+        -Wdouble-promotion
+        -Wimplicit-fallthrough
+        -Woverloaded-virtual
+        -Wnon-virtual-dtor
+        -Wold-style-cast
+        -Werror=vla
+        -Wundef
+        -Wctor-dtor-privacy
+        -Wextra-semi
+        -Wold-style-cast
+        -Woverloaded-virtual
+        -Wsign-promo
+        -Wzero-as-null-pointer-constant
     )

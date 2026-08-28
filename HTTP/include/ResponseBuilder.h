@@ -15,11 +15,11 @@ namespace PPG
 
         Response Build();
         ResponseBuilder& Reset();
-        ResponseBuilder& Version(const std::string_view& Version);
+        ResponseBuilder& Version(std::string_view Version);
         ResponseBuilder& StatusCode(uint16_t StatusCode);
-        ResponseBuilder& Status(const std::string_view& Status);
-        ResponseBuilder& Body(const std::string_view& Body);
-        ResponseBuilder& Header(const std::string_view& Key, const std::string_view& Value);
+        ResponseBuilder& Status(std::string_view Status);
+        ResponseBuilder& Body(std::string_view Body);
+        ResponseBuilder& Header(std::string_view Key, std::string_view Value);
 
         ResponseBuilder& NotFound();
         ResponseBuilder& BadRequest();

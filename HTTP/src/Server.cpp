@@ -2,6 +2,7 @@
 #include <Server.h>
 #include <ResponseBuilder.h>
 #include <Logger.h>
+#include <climits>
 
 PPG::Server::Server(const char* IPAddress, const char* Port)
 {
@@ -33,8 +34,9 @@ PPG::Server::Server(const char* IPAddress, const char* Port)
 
         char Options = 1;
         Enforce(setsockopt(ListenFD, SOL_SOCKET, SO_REUSEADDR, &Options, sizeof(Options)) == 0, "Failed to set socket options");
+        Enforce(Info->ai_addrlen <= INT_MAX, "Underflow detected, not safe to cast to int");
 
-        if (bind(ListenFD, Info->ai_addr, Info->ai_addrlen) == SOCKET_ERROR)
+        if (bind(ListenFD, Info->ai_addr, static_cast<int>(Info->ai_addrlen)) == SOCKET_ERROR)
         {
             closesocket(ListenFD);
             Logger::Get().Warn("Failed to bind socket, trying the next one...");
@@ -53,6 +55,7 @@ PPG::Server::Server(const char* IPAddress, const char* Port)
     ListeningSocket.Socket.fd = ListenFD;
     ListeningSocket.Socket.events = POLLIN;
     ConnectionList.emplace_back(ListeningSocket);
+    Logger::Get().Trace("Listening socket: " + std::to_string(ListenFD));
     Enforce(ConnectionList.size() == 1, "There should not be any other connections other than the listening socket");
 }
 
@@ -68,7 +71,8 @@ void PPG::Server::Run()
         for (size_t i = 0; i < ConnectionList.size(); i++) { PollFDList.emplace_back(ConnectionList[i].Socket); }
 
         Enforce(PollFDList.size() == ConnectionList.size(), "Mapping wrong between PollFDList and ConnectionList");
-        Enforce(WSAPoll(PollFDList.data(), PollFDList.size(), MaxTimeout) != SOCKET_ERROR, "Error occured during polling");
+        Enforce(PollFDList.size() <= ULONG_MAX, "Not safe to cast to ULONG");
+        Enforce(WSAPoll(PollFDList.data(), static_cast<ULONG>(PollFDList.size()), MaxTimeout) != SOCKET_ERROR, "Error occured during polling");
 
         for (size_t ConnectionIndex = ConnectionList.size(); ConnectionIndex-- > 0; )
         {
@@ -162,7 +166,7 @@ void PPG::Server::HandleClientData(size_t Index)
 
     char Data[ReceiveBufferSize];
     int NumBytes = recv(ConnectionList[Index].Socket.fd, Data, ReceiveBufferSize, 0);
-    Logger::Get().Debug("Received " + std::to_string(NumBytes) + " bytes on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+    Logger::Get().Trace("Received " + std::to_string(NumBytes) + " bytes");
 
     if (NumBytes <= 0)
     {
@@ -179,7 +183,7 @@ void PPG::Server::HandleClientData(size_t Index)
     }
 
     ConnectionList[Index].LastEvent = Clock::now();
-    ConnectionList[Index].Par.Buffer += std::string(Data, NumBytes);
+    ConnectionList[Index].Par.Buffer.append(Data, static_cast<size_t>(NumBytes));
 
     if (ConnectionList[Index].Par.Buffer.size() > MaxBufferSize)
     {
@@ -192,7 +196,7 @@ void PPG::Server::HandleClientData(size_t Index)
     while (true)
     {
         int Result = ConnectionList[Index].Par.Parse();
-        Logger::Get().Debug("Parse result: " + std::to_string(Result) + " on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+        Logger::Get().Info("Parsing result in main loop: " + std::to_string(Result));
 
         switch (Result)
         {
@@ -209,13 +213,14 @@ void PPG::Server::HandleClientData(size_t Index)
         case 0:
         {
             // Need more data!
-            Logger::Get().Debug("Incomplete request on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+            Logger::Get().Trace("Incomplete request. Returning and waiting for new data ...");
             return;
         }
         case 1:
         {
             Parser& Par = ConnectionList[Index].Par;
             ProcessRequest(Index, Par.Req);
+            Logger::Get().Trace("Finished processing request");
 
             bool CloseFlag = false;
             bool KeepAliveFlag = false;
@@ -223,54 +228,43 @@ void PPG::Server::HandleClientData(size_t Index)
             for (size_t i = 0; i < Par.Req.Headers.size(); i++)
             {
                 if (Par.Req.Headers[i].Key != "connection") { continue; }
-                std::string Value = ToLower(Par.Req.Headers[i].Value);
-                Logger::Get().Debug("Connection header found on socket " + std::to_string(ConnectionList[Index].Socket.fd));
-
-                if (Value.find("close") != std::string::npos) { CloseFlag = true; }
-                if (Value.find("keep-alive") != std::string::npos) { KeepAliveFlag = true; }
+                if (Par.Req.Headers[i].Value.find("close") != std::string::npos) { CloseFlag = true; }
+                if (Par.Req.Headers[i].Value.find("keep-alive") != std::string::npos) { KeepAliveFlag = true; }
             }
 
             if (CloseFlag)
             {
-                Logger::Get().Debug("Close header found on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+                Logger::Get().Trace("Close flag located");
                 RemoveConnection(Index);
                 return;
             }
             else if (KeepAliveFlag)
             {
+                Logger::Get().Trace("Keep alive flag located");
                 Enforce(Par.Position <= Par.Buffer.size(), "Parser position exceeds parser buffer");
-                Logger::Get().Debug("Keep alive header found on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+                Par.Reset();
 
-                const std::string Remaining = Par.Buffer.substr(Par.Position);
-                Par = {};
-                Par.Buffer = Remaining;
-                Logger::Get().Debug("Reset parser on socket " + std::to_string(ConnectionList[Index].Socket.fd));
-
-                if (Par.Buffer.empty())
+                if (Par.Position >= Par.Buffer.size())
                 {
-                    Logger::Get().Debug("Returning because buffer empty on socket " + std::to_string(ConnectionList[Index].Socket.fd));
-                    return;
+                    Logger::Get().Trace("Reached the end of buffer. Waiting for more data or 0 signal ...");
+                    return; 
                 }
             }
             else if (Par.Req.Version == "HTTP/1.1")
             {
-                Logger::Get().Debug("No HTTP/1.1 connection header on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+                Logger::Get().Trace("No flag located in HTTP 1.1 request. Defaulting to keep alive");
                 Enforce(Par.Position <= Par.Buffer.size(), "Parser position exceeds parser buffer");
+                Par.Reset();
 
-                const std::string Remaining = Par.Buffer.substr(Par.Position);
-                Par = {};
-                Par.Buffer = Remaining;
-                Logger::Get().Debug("Defaulting to keep alive on socket " + std::to_string(ConnectionList[Index].Socket.fd));
-
-                if (Par.Buffer.empty())
+                if (Par.Position >= Par.Buffer.size())
                 {
-                    Logger::Get().Debug("Returning because buffer empty on socket " + std::to_string(ConnectionList[Index].Socket.fd));
-                    return;
+                    Logger::Get().Trace("Reached the end of buffer. Waiting for more data or 0 signal ...");
+                    return; 
                 }
             }
             else if (Par.Req.Version == "HTTP/1.0")
             {
-                Logger::Get().Debug("No HTTP/1.0 connection header(default close) on socket " + std::to_string(ConnectionList[Index].Socket.fd));
+                Logger::Get().Trace("No flag located in HTTP 1.0 request. Defaulting to close");
                 RemoveConnection(Index);
                 return;
             }
@@ -288,19 +282,25 @@ std::string PPG::Server::Stringify(const Response& Res)
     Enforce(Res.StatusCode != 0 && Res.Status != "" && Res.Version != "", "Default response should never be sent to any user ever");
 
     std::string Result = "";
-    Result += Res.Version + " " + std::to_string(Res.StatusCode) + " " + Res.Status + "\r\n";
-    Logger::Get().Trace("Inside stringify, Version: " + Res.Version);
-    Logger::Get().Trace("Inside stringify, Status code: " + std::to_string(Res.StatusCode));
-    Logger::Get().Trace("Inside stringify, Status: " + Res.Status);
+    Result.append(Res.Version);
+    Result.append(" ");
+    Result.append(std::to_string(static_cast<unsigned>(Res.StatusCode)));
+    Result.append(" ");
+    Result.append(Res.Status);
+    Result.append("\r\n");
 
     for (const auto& Header: Res.Headers)
     {
-        Logger::Get().Trace("Header, " + Header.Key + ": " + Header.Value);
-        Result += Header.Key + ": " + Header.Value + "\r\n";
+        Result.append(Header.Key);
+        Result.append(": ");
+        Result.append(Header.Value);
+        Result.append("\r\n");
     }
 
-    Logger::Get().Trace("Body: " + Res.Body);
-    Result += "\r\n" + Res.Body;
+    Result.append("\r\n");
+    Result.append(Res.Body);
+    Logger::Get().Trace("Response to send:\n" + Result);
+
     return Result;
 }
 
@@ -308,14 +308,14 @@ void PPG::Server::ProcessRequest(size_t Index, const Request& Req)
 {
     Enforce(Index > 0 && Index < ConnectionList.size(), "Invalid connection index");
     Enforce(Req.Method != "" && Req.Path != "", "Invalid method or path");
-    Logger::Get().Debug("Processing request on socket " + std::to_string(ConnectionList[Index].Socket.fd));
-    Logger::Get().Trace("Method: " + Req.Method);
-    Logger::Get().Trace("Path: " + Req.Path);
-    Logger::Get().Trace("Version: " + Req.Version);
 
-    const std::string Key = Req.Method + ":" + Req.Path;
+    std::string Key = "";
+    Key.append(Req.Method);
+    Key.append(":");
+    Key.append(Req.Path);
+    Logger::Get().Trace("Route key: " + Key);
+
     auto It = Routes.find(Key);
-
     if (It == Routes.end())
     {
         Logger::Get().Warn("No route found (404 error) on socket " + std::to_string(ConnectionList[Index].Socket.fd));
@@ -330,28 +330,28 @@ void PPG::Server::ProcessRequest(size_t Index, const Request& Req)
 
 void PPG::Server::SendResponse(SOCKET ClientFD, const Response& Res)
 {
-    std::string ResponseString = Stringify(Res);
-    Enforce(ResponseString.size() != 0, "Response should NEVER be empty");
+    const std::string ResponseString = Stringify(Res);
+    Enforce(ResponseString.size() != 0 && ResponseString.size() <= INT_MAX, "Response should NEVER be empty or larger than int max");
 
     size_t TotalSent = 0;
     size_t Remaining = ResponseString.size();
-    Logger::Get().Trace("Send response size: " + std::to_string(Remaining));
+    Logger::Get().Trace("Response size: " + std::to_string(Remaining));
 
     while (Remaining > 0)
     {
-        int Sent = send(ClientFD, ResponseString.c_str() + TotalSent, Remaining, 0);
+        int Sent = send(ClientFD, ResponseString.c_str() + TotalSent, static_cast<int>(Remaining), 0);
         if (Sent == SOCKET_ERROR)
         {
             Logger::Get().Error("Failed to send response: " + std::to_string(WSAGetLastError()));
             return;
         }
 
-        Logger::Get().Trace("Sent packet size: " + std::to_string(Sent));
-        TotalSent += Sent;
-        Remaining -= Sent;
+        Logger::Get().Trace("Sent " + std::to_string(Sent) + " bytes");
+
+        TotalSent += static_cast<size_t>(Sent);
+        Remaining -= static_cast<size_t>(Sent);
     }
 
-    Logger::Get().Trace("Fully sent packet");
     Enforce(Remaining == 0 && TotalSent == ResponseString.size(), "Response should always be fully sent unless there is a bug");
 }
 
@@ -360,10 +360,10 @@ void PPG::Server::RemoveConnection(size_t Index)
     Enforce(Index > 0 && Index < ConnectionList.size(), "Invariant broken inside RemoveConnections()");
     Logger::Get().Info("Removing socket " + std::to_string(ConnectionList[Index].Socket.fd));
     if (ConnectionList[Index].Socket.fd != INVALID_SOCKET) { closesocket(ConnectionList[Index].Socket.fd); }
-    ConnectionList.erase(ConnectionList.begin() + Index);
+    ConnectionList.erase(ConnectionList.begin() + static_cast<long long>(Index));
 }
 
-void PPG::Server::AddRoute(std::string Method, const std::string& Path, std::function<Response(const Request&)> Dispatcher)
+void PPG::Server::AddRoute(std::string_view Method, std::string_view Path, std::function<Response(const Request&)> Dispatcher)
 {
     if (Path.size() == 0)
     {
@@ -378,9 +378,13 @@ void PPG::Server::AddRoute(std::string Method, const std::string& Path, std::fun
         return;
     }
 
-    std::string Key = Method + ":" + Path;
+    std::string Key = "";
+    Key.append(Method);
+    Key.append(":");
+    Key.append(Path);
+
     Routes[Key] = Dispatcher;
-    Logger::Get().Info("Added route: " + Method + " " + Path);
+    Logger::Get().Info("Added route: " + Key);
 }
 
 PPG::Server::~Server()
