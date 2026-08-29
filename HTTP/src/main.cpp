@@ -6,9 +6,9 @@
 int main()
 {
     Logger::Get().SetLevel(LogLevel::LogInfo);
-    PPG::Server* PPG = new PPG::Server("127.0.0.1", "8080");
+    PPG::Server PPG("127.0.0.1", "8080");
 
-    PPG->AddRoute("GET", "/", [](const PPG::Request& Req)
+    PPG.AddRoute("GET", "/", [](const PPG::Request& Req)
     {
         // Just to make my compiler stop complaining about unused variables
         Logger::Get().Trace("Root Method: " + std::string(Req.Method));
@@ -27,7 +27,7 @@ int main()
             .Build();
     });
 
-    PPG->AddRoute("POST", "/echo", [](const PPG::Request& Req)
+    PPG.AddRoute("POST", "/echo", [](const PPG::Request& Req)
     {
         PPG::ResponseBuilder Builder;
         return Builder
@@ -37,6 +37,6 @@ int main()
             .Build();
     });
 
-    PPG->Run();
+    PPG.Run();
     return 0;
 }

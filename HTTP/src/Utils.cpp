@@ -32,26 +32,6 @@ bool IsValidToken(std::string_view Token)
     return true;
 }
 
-// This function still needs a lot of work
-bool IsValidURI(std::string_view URI)
-{
-    if (URI.size() == 0) { return false; }
-
-    for (size_t i = 0; i < URI.size(); i++)
-    {
-        char C = URI[i];
-        if (C <= 0x20 || C >= 0x7F) { return false; }
-        if (C == '%')
-        {
-            if (i + 2 >= URI.size()) { return false; }
-            if (!IsHexDigit(URI[i + 1]) || !IsHexDigit(URI[i + 2])) { return false; }
-            i += 2;
-        }
-    }
-
-    return true;
-}
-
 bool IsValidHTTPVersion(std::string_view Version)
 {
     return Version == "HTTP/1.0" || Version == "HTTP/1.1";
@@ -81,38 +61,6 @@ long long ParseHex(std::string_view Hex)
     if (Value > INT_MAX) { return -1; }
     return Value;
 }
-
-// Replace with a boolean return to signal correct decoding
-std::string URLDecode(std::string_view Encoded)
-{
-    std::string Result = "";
-    size_t i = 0;
-
-    while (i < Encoded.size())
-    {
-        if (Encoded[i] == '%')
-        {
-            if (i + 2 < Encoded.size())
-            {
-                if (IsHexDigit(Encoded[i + 1]) && IsHexDigit(Encoded[i + 2]))
-                {
-                    long long ByteValue = ParseHex(Encoded.substr(i + 1, 2));
-                    if (ByteValue < 0 || ByteValue > UCHAR_MAX) { return ""; }
-
-                    Result.push_back(static_cast<char>(ByteValue));
-                    i += 3;
-                    continue;
-                }
-            }
-        }
-
-        Result.push_back(Encoded[i]);
-        i++;
-    }
-
-    return Result;
-}
-
 
 bool IsValidMethod(std::string_view Method)
 {

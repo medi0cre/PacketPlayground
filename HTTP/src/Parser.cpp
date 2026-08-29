@@ -110,8 +110,6 @@ PPG::ParseResult PPG::Parser::ParseRequestLineURI()
         if (Byte == ' ')
         {
             Req.URI = std::string_view(Buffer.data() + URIStart, Position - URIStart);
-
-            if (!IsValidURI(Req.URI)) { return ParseResult::Error; }
             ParseURIComponents();
 
             Position++;
