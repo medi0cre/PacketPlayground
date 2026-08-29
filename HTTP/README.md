@@ -37,9 +37,7 @@ Responsible for:
 
 ### `Parser`
 
-The HTTP parser is implemented as a state machine.
-
-The parser is designed to handle incomplete input because TCP provides a byte stream rather than discrete messages.
+The HTTP parser is implemented as a state machine. The parser is designed to handle incomplete input smoothly.
 
 For example, the following request does not have to arrive in a single `recv()` call:
 
@@ -86,41 +84,13 @@ CRITICAL
 The log level can be changed at runtime:
 
 ```cpp
-Logger::Get().SetLevel(LogLevel::LogTrace);
-```
-
-## Example
-
-The current server exposes two routes.
-
-### `GET /`
-
-Returns:
-
-```html
-<h1>Hello World</h1>
-```
-
-### `POST /echo`
-
-Returns the request body as JSON-compatible response content.
-
-For example:
-
-```http
-POST /echo HTTP/1.1
-Host: localhost
-Content-Type: application/json
-Content-Length: 13
-
-{"hello":"hi"}
+Logger::Get().SetLevel(LogLevel::LogInfo);
 ```
 
 ## Building
 
-### Requirements
+### Requirements (Windows)
 
-* Windows
 * C++17 compiler
 * CMake 3.26 or newer
 * WinSock 2
@@ -140,14 +110,6 @@ Build it:
 ```bash
 cmake --build build
 ```
-
-The resulting executable is:
-
-```text
-PPG.exe
-```
-
-The repository also contains Windows batch scripts for building, cleaning, and running the project.
 
 ## Running
 
