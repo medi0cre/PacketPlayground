@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <chrono>
+#include <unordered_map>
 #include <cstdint>
 #include <functional>
 #include <winsock2.h>

@@ -1,5 +1,7 @@
 #include <Utils.h>
 #include <cstring>
+#include <cstdlib>
+#include <cctype>
 #include <climits>
 #include <Logger.h>
 
@@ -55,7 +57,7 @@ bool IsValidHTTPVersion(std::string_view Version)
     return Version == "HTTP/1.0" || Version == "HTTP/1.1";
 }
 
-bool IsHexDigit(const char C)
+bool IsHexDigit(char C)
 {
     return ((C >= '0' && C <= '9') || (C >= 'a' && C <= 'f') || (C >= 'A' && C <= 'F'));
 }
@@ -80,6 +82,7 @@ long long ParseHex(std::string_view Hex)
     return Value;
 }
 
+// Replace with a boolean return to signal correct decoding
 std::string URLDecode(std::string_view Encoded)
 {
     std::string Result = "";
@@ -134,13 +137,13 @@ void TrimTrailingWhiteSpace(std::string_view& String)
     }
 }
 
-bool CompareInsensitive(std::string_view View, const char* String)
+bool CompareInsensitive(std::string_view View1, std::string_view View2)
 {
-    if (View.size() != strlen(String)) { return false; }
+    if (View1.size() != View2.size()) { return false; }
 
-    for (size_t i = 0; i < View.size(); i++)
+    for (size_t i = 0; i < View1.size(); i++)
     {
-        if (std::tolower(View[i]) != std::tolower(String[i])) { return false; }
+        if (std::tolower(static_cast<unsigned char>(View1[i])) != std::tolower(static_cast<unsigned char>(View2[i]))) { return false; }
     }
 
     return true;

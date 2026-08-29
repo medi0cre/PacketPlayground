@@ -227,7 +227,7 @@ void PPG::Server::HandleClientData(size_t Index)
 
             for (size_t i = 0; i < Par.Req.Headers.size(); i++)
             {
-                if (Par.Req.Headers[i].Key != "connection") { continue; }
+                if (!CompareInsensitive(Par.Req.Headers[i].Key, "connection")) { continue; }
                 if (Par.Req.Headers[i].Value.find("close") != std::string::npos) { CloseFlag = true; }
                 if (Par.Req.Headers[i].Value.find("keep-alive") != std::string::npos) { KeepAliveFlag = true; }
             }

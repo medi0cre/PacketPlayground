@@ -18,7 +18,7 @@ constexpr size_t MaxBodySize = 30720;
 
 namespace PPG
 {
-    enum ParseResult
+    enum class ParseResult
     {
         Error,
         Incomplete,
@@ -26,7 +26,7 @@ namespace PPG
         OK
     };
 
-    enum ParseState
+    enum class ParseState
     {
         RequestLineStart,
         RequestLineMethod,

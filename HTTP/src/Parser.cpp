@@ -577,33 +577,25 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
     }
     else if (CLFlag)
     {
-        try
-        {
-            long long Length = 0;
-            auto [Ptr, Err] = std::from_chars(Req.Headers[CLIndex].Value.data(),
-                    Req.Headers[CLIndex].Value.data() + Req.Headers[CLIndex].Value.size(),
-                    Length);
+		long long Length = 0;
+		auto [Ptr, Err] = std::from_chars(Req.Headers[CLIndex].Value.data(),
+				Req.Headers[CLIndex].Value.data() + Req.Headers[CLIndex].Value.size(),
+				Length);
 
-            if (Err != std::errc{} || Ptr != (Req.Headers[CLIndex].Value.data() + Req.Headers[CLIndex].Value.size())) { return ParseResult::Error; }
-            if (Length < 0) { return ParseResult::Error; }
+		if (Err != std::errc{} || Ptr != (Req.Headers[CLIndex].Value.data() + Req.Headers[CLIndex].Value.size())) { return ParseResult::Error; }
+		if (Length < 0) { return ParseResult::Error; }
 
-            Req.ContentLength = static_cast<size_t>(Length);
-            if (Req.ContentLength == 0)
-            {
-                State = ParseState::ParseComplete;
-                return ParseResult::Complete;
-            }
-            else
-            {
-                State = ParseState::BodyFixedLength;
-                return ParseResult::OK;
-            }
-        }
-        catch (const std::exception& E)
-        {
-            Logger::Get().Error("Error while converting from string to integer: " + std::string(E.what()));
-            return ParseResult::Error;
-        }
+		Req.ContentLength = static_cast<size_t>(Length);
+		if (Req.ContentLength == 0)
+		{
+			State = ParseState::ParseComplete;
+			return ParseResult::Complete;
+		}
+		else
+		{
+			State = ParseState::BodyFixedLength;
+			return ParseResult::OK;
+		}
     }
 
     State = ParseState::ParseComplete;
