@@ -51,7 +51,7 @@ namespace PPG
         ParseComplete,
     };
 
-    struct KV
+    struct SVKV
     {
         std::string_view Key = "";
         std::string_view Value = "";
@@ -64,8 +64,8 @@ namespace PPG
         std::string_view Path = "";
         std::string_view Query = "";
         std::string_view Version = "";
-        std::vector<KV> Headers{};
-        std::vector<KV> Trailers{};
+        std::vector<SVKV> Headers{};
+        std::vector<SVKV> Trailers{};
         std::string_view Body = "";
         size_t ContentLength = 0;
         std::vector<std::string_view> ChunkedBody{};
@@ -84,8 +84,8 @@ namespace PPG
         Request Req{};
         ParseState State = ParseState::RequestLineStart;
         std::string Buffer = "";
-        KV CurrentHeader{};
-        KV CurrentTrailer{};
+        SVKV CurrentHeader{};
+        SVKV CurrentTrailer{};
         Chunk CurrentChunk{};
 
         Parser() = default;
