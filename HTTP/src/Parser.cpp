@@ -9,6 +9,7 @@ int PPG::Parser::Parse()
     while (true)
     {
         ParseResult Result = ParseByState();
+        Logger::Get().Trace("State: " + std::to_string(static_cast<int>(State)) + ", ParseResult: " + std::to_string(static_cast<int>(Result)));
 
         switch (Result)
         {
@@ -28,26 +29,26 @@ PPG::ParseResult PPG::Parser::ParseByState()
 {
     switch (State)
     {
-    case RequestLineStart: { return ParseRequestLineStart(); }
-    case RequestLineMethod: { return ParseRequestLineMethod(); }
-    case RequestLineURI: { return ParseRequestLineURI(); }
-    case RequestLineVersion: { return ParseRequestLineVersion(); }
-    case RequestLineCRLF: { return ParseRequestLineCRLF(); }
-    case HeaderName: { return ParseHeaderName(); }
-    case HeaderValueStart: { return ParseHeaderValueStart(); }
-    case HeaderValue: { return ParseHeaderValue(); }
-    case HeaderValueCRLF: { return ParseHeaderValueCRLF(); }
-    case HeaderEndCRLF: { return ParseHeaderEndCRLF(); }
-    case BodyFixedLength: { return ParseBodyFixedLength(); }
-    case BodyChunkSize: { return ParseChunkSize(); }
-    case BodyChunkExtension: { return ParseChunkExtension(); }
-    case BodyChunkSizeCRLF: { return ParseChunkSizeCRLF(); }
-    case BodyChunkData: { return ParseChunkData(); }
-    case BodyChunkDataCRLF: { return ParseChunkDataCRLF(); }
-    case BodyChunkTrailerName: { return ParseChunkTrailerName(); }
-    case BodyChunkTrailerValue: { return ParseChunkTrailerValue(); }
-    case BodyChunkTrailerCRLF: { return ParseChunkTrailerCRLF(); }
-    case BodyChunkFinalCRLF: { return ParseChunkFinalCRLF(); }
+    case ParseState::RequestLineStart: { return ParseRequestLineStart(); }
+    case ParseState::RequestLineMethod: { return ParseRequestLineMethod(); }
+    case ParseState::RequestLineURI: { return ParseRequestLineURI(); }
+    case ParseState::RequestLineVersion: { return ParseRequestLineVersion(); }
+    case ParseState::RequestLineCRLF: { return ParseRequestLineCRLF(); }
+    case ParseState::HeaderName: { return ParseHeaderName(); }
+    case ParseState::HeaderValueStart: { return ParseHeaderValueStart(); }
+    case ParseState::HeaderValue: { return ParseHeaderValue(); }
+    case ParseState::HeaderValueCRLF: { return ParseHeaderValueCRLF(); }
+    case ParseState::HeaderEndCRLF: { return ParseHeaderEndCRLF(); }
+    case ParseState::BodyFixedLength: { return ParseBodyFixedLength(); }
+    case ParseState::BodyChunkSize: { return ParseChunkSize(); }
+    case ParseState::BodyChunkExtension: { return ParseChunkExtension(); }
+    case ParseState::BodyChunkSizeCRLF: { return ParseChunkSizeCRLF(); }
+    case ParseState::BodyChunkData: { return ParseChunkData(); }
+    case ParseState::BodyChunkDataCRLF: { return ParseChunkDataCRLF(); }
+    case ParseState::BodyChunkTrailerName: { return ParseChunkTrailerName(); }
+    case ParseState::BodyChunkTrailerValue: { return ParseChunkTrailerValue(); }
+    case ParseState::BodyChunkTrailerCRLF: { return ParseChunkTrailerCRLF(); }
+    case ParseState::BodyChunkFinalCRLF: { return ParseChunkFinalCRLF(); }
     default: { return ParseResult::Error; }
     }
 }
@@ -302,7 +303,7 @@ PPG::ParseResult PPG::Parser::ParseChunkSize()
             long long HexSize = ParseHex(std::string_view(Buffer.data() + SizeStart, Position - SizeStart));
 
             if (HexSize < 0 || static_cast<size_t>(HexSize) > MaxChunkSize) { return ParseResult::Error; }
-            else { CurrentChunk.Size = HexSize; }
+            else { CurrentChunk.Size = static_cast<size_t>(HexSize); }
 
             State = ParseState::BodyChunkSizeCRLF;
             return ParseResult::OK;
@@ -312,7 +313,7 @@ PPG::ParseResult PPG::Parser::ParseChunkSize()
             long long HexSize = ParseHex(std::string_view(Buffer.data() + SizeStart, Position - SizeStart));
 
             if (HexSize < 0 || static_cast<size_t>(HexSize) > MaxChunkSize) { return ParseResult::Error; }
-            else { CurrentChunk.Size = HexSize; }
+            else { CurrentChunk.Size = static_cast<size_t>(HexSize); }
 
             Position++;
             State = ParseState::BodyChunkExtension;
@@ -586,7 +587,7 @@ PPG::ParseResult PPG::Parser::FinalizeHeaders()
             if (Err != std::errc{} || Ptr != (Req.Headers[CLIndex].Value.data() + Req.Headers[CLIndex].Value.size())) { return ParseResult::Error; }
             if (Length < 0) { return ParseResult::Error; }
 
-            Req.ContentLength = Length;
+            Req.ContentLength = static_cast<size_t>(Length);
             if (Req.ContentLength == 0)
             {
                 State = ParseState::ParseComplete;

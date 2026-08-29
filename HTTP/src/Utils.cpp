@@ -1,5 +1,6 @@
 #include <Utils.h>
 #include <cstring>
+#include <climits>
 #include <Logger.h>
 
 void Enforce(bool Condition, const char* Message)
@@ -75,7 +76,7 @@ long long ParseHex(std::string_view Hex)
         else { return -1; }
     }
 
-    if (Value > 0x7FFFFFFF) { return -1; }
+    if (Value > INT_MAX) { return -1; }
     return Value;
 }
 
@@ -93,7 +94,7 @@ std::string URLDecode(std::string_view Encoded)
                 if (IsHexDigit(Encoded[i + 1]) && IsHexDigit(Encoded[i + 2]))
                 {
                     long long ByteValue = ParseHex(Encoded.substr(i + 1, 2));
-                    if (ByteValue < 0 || ByteValue > 0xFF) { return ""; }
+                    if (ByteValue < 0 || ByteValue > UCHAR_MAX) { return ""; }
 
                     Result.push_back(static_cast<char>(ByteValue));
                     i += 3;
