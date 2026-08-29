@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.26)
 project(PPG LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(PPG
     src/main.cpp
@@ -37,8 +39,6 @@ target_compile_options(PPG PRIVATE
 	-Wundef
 	-Wctor-dtor-privacy
 	-Wextra-semi
-	-Wold-style-cast
-	-Woverloaded-virtual
 	-Wsign-promo
 	-Wzero-as-null-pointer-constant
 )
