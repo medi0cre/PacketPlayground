@@ -2,7 +2,6 @@
 #include <cstring>
 #include <cstdlib>
 #include <cctype>
-#include <climits>
 #include <Logger.h>
 
 void Enforce(bool Condition, const char* Message)
@@ -42,23 +41,25 @@ bool IsHexDigit(char C)
     return ((C >= '0' && C <= '9') || (C >= 'a' && C <= 'f') || (C >= 'A' && C <= 'F'));
 }
 
-long long ParseHex(std::string_view Hex)
+int64_t ParseHex(std::string_view Hex)
 {
-    if (Hex.size() == 0 || Hex.size() > 8) { return -1; }
+    // Any string bigger than 16 characters cannot be stored as a number, so just return error
+    if (Hex.empty() || Hex.size() > 16) { return -1; }
+    if (Hex.size() == 16 && (Hex[0] < '0' || Hex[0] > '7')) { return -1; }
 
-    long long Value = 0;
-    for (size_t i = 0; i < Hex.size(); i++)
+    int64_t Value = 0;
+    for (char C : Hex)
     {
-        Value *= 16;
-        char C = Hex[i];
+        char Digit = 0;
 
-        if (C >= '0' && C <= '9') { Value += C - '0'; }
-        else if (C >= 'a' && C <= 'f') { Value += (C - 'a' + 10); }
-        else if (C >= 'A' && C <= 'F') { Value += (C - 'A' + 10); }
+        if (C >= '0' && C <= '9') { Digit = C - '0'; }
+        else if (C >= 'a' && C <= 'f') { Digit = C - 'a' + 10; }
+        else if (C >= 'A' && C <= 'F') { Digit = C - 'A' + 10; }
         else { return -1; }
+
+        Value = Value * 16 + Digit;
     }
 
-    if (Value > INT_MAX) { return -1; }
     return Value;
 }
 

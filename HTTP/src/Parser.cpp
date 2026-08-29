@@ -298,7 +298,7 @@ PPG::ParseResult PPG::Parser::ParseChunkSize()
         if (IsHexDigit(Byte)) { Position++; }
         else if (Byte == '\r')
         {
-            long long HexSize = ParseHex(std::string_view(Buffer.data() + SizeStart, Position - SizeStart));
+            int64_t HexSize = ParseHex(std::string_view(Buffer.data() + SizeStart, Position - SizeStart));
 
             if (HexSize < 0 || static_cast<size_t>(HexSize) > MaxChunkSize) { return ParseResult::Error; }
             else { CurrentChunk.Size = static_cast<size_t>(HexSize); }
@@ -308,7 +308,7 @@ PPG::ParseResult PPG::Parser::ParseChunkSize()
         }
         else if (Byte == ';')
         {
-            long long HexSize = ParseHex(std::string_view(Buffer.data() + SizeStart, Position - SizeStart));
+            int64_t HexSize = ParseHex(std::string_view(Buffer.data() + SizeStart, Position - SizeStart));
 
             if (HexSize < 0 || static_cast<size_t>(HexSize) > MaxChunkSize) { return ParseResult::Error; }
             else { CurrentChunk.Size = static_cast<size_t>(HexSize); }
