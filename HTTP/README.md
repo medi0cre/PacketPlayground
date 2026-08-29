@@ -211,7 +211,6 @@ Notable limitations include:
 * No authentication
 * No production-grade security hardening
 
-HTTP parsing is also an ongoing part of the project, so strict RFC compliance is not currently the goal.
 
 ## Roadmap
 
@@ -243,8 +242,7 @@ The implementation is informed primarily by the HTTP specifications:
 * RFC 9110 — HTTP Semantics
 * RFC 9112 — HTTP/1.1
 
-The RFCs are especially useful when working on message framing, header fields, connection persistence, and chunked transfer encoding.
 
 ## License
 
-Add your preferred license here.
+MIT
