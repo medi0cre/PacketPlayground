@@ -213,24 +213,6 @@ Notable limitations include:
 
 HTTP parsing is also an ongoing part of the project, so strict RFC compliance is not currently the goal.
 
-## Why Build This?
-
-It is easy to write:
-
-```cpp
-recv(socket, buffer, ...);
-```
-
-and think you have received an HTTP request.
-
-You haven't.
-
-TCP gives the application an ordered byte stream. A single request may arrive across multiple `recv()` calls, multiple requests may arrive in one `recv()`, and a request can contain arbitrary body data.
-
-That makes HTTP parsing an interesting exercise in state management and message framing.
-
-This project exists to explore that process from the bottom up instead of hiding it behind a web framework or HTTP library.
-
 ## Roadmap
 
 Possible future work:
