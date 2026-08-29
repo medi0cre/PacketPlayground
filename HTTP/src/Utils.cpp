@@ -41,13 +41,12 @@ bool IsHexDigit(char C)
     return ((C >= '0' && C <= '9') || (C >= 'a' && C <= 'f') || (C >= 'A' && C <= 'F'));
 }
 
-int64_t ParseHex(std::string_view Hex)
+bool ParseHex(std::string_view Hex, uint64_t& Value)
 {
     // Any string bigger than 16 characters cannot be stored as a number, so just return error
-    if (Hex.empty() || Hex.size() > 16) { return -1; }
-    if (Hex.size() == 16 && (Hex[0] < '0' || Hex[0] > '7')) { return -1; }
+    if (Hex.empty() || Hex.size() > 16) { return false; }
 
-    int64_t Value = 0;
+    Value = 0;
     for (char C : Hex)
     {
         char Digit = 0;
@@ -55,12 +54,12 @@ int64_t ParseHex(std::string_view Hex)
         if (C >= '0' && C <= '9') { Digit = C - '0'; }
         else if (C >= 'a' && C <= 'f') { Digit = C - 'a' + 10; }
         else if (C >= 'A' && C <= 'F') { Digit = C - 'A' + 10; }
-        else { return -1; }
+        else { return false; }
 
-        Value = Value * 16 + Digit;
+        Value = Value * 16 + static_cast<uint64_t>(Digit);
     }
 
-    return Value;
+    return true;
 }
 
 bool IsValidMethod(std::string_view Method)
