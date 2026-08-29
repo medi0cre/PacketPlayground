@@ -170,8 +170,6 @@ The tests currently focus primarily on HTTP parsing and malformed requests, incl
 * Header-name case handling
 * Duplicate ordinary headers
 
-More protocol and edge-case tests will be added as the implementation evolves.
-
 ## Design Goals
 
 This project is primarily an educational exercise.
@@ -179,27 +177,25 @@ This project is primarily an educational exercise.
 The main goals are to understand:
 
 1. How TCP sockets actually behave
-2. Why a TCP `recv()` does not necessarily correspond to one HTTP request
-3. How incremental protocol parsers work
-4. How HTTP determines message boundaries
-5. How `Content-Length` and chunked transfer encoding work
-6. How persistent HTTP connections are managed
-7. How malformed input can affect protocol parsers
-8. How a relatively small state machine can parse a streaming protocol
-9. How socket-level networking maps onto an application-layer protocol
+2. How incremental protocol parsers work
+3. How HTTP determines message boundaries
+4. How `Content-Length` and chunked transfer encoding work
+5. How persistent HTTP connections are managed
+6. How malformed input can affect protocol parsers
+7. How a relatively small state machine can parse a streaming protocol
+8. How socket-level networking maps onto an application-layer protocol
 
-The implementation intentionally favors explicit code and understandable state transitions over abstraction-heavy designs.
 
 ## Current Limitations
 
-This is **not intended to be a production HTTP server**.
+This is **not a production HTTP server**.
 
 The implementation currently has a deliberately limited HTTP feature set.
 
 Notable limitations include:
 
 * Windows/WinSock specific implementation
-* Single-threaded server
+* Single-threaded
 * Blocking sockets
 * Limited HTTP method support
 * Limited URI validation
