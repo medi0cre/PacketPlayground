@@ -21,35 +21,7 @@ No HTTP library is used for request parsing or server functionality.
 * Simple logging with configurable log levels
 * A small Python-based protocol test harness
 
-## Project Structure
-
-```text
-.
-├── Build.bat
-├── Clean.bat
-├── Run.bat
-├── CMakeLists.txt
-│
-├── include/
-│   ├── Logger.h
-│   ├── Parser.h
-│   ├── ResponseBuilder.h
-│   ├── Server.h
-│   └── Utils.h
-│
-├── src/
-│   ├── Logger.cpp
-│   ├── Parser.cpp
-│   ├── ResponseBuilder.cpp
-│   ├── Server.cpp
-│   ├── Utils.cpp
-│   └── main.cpp
-│
-└── tests/
-    ├── tests.csv
-    └── tests.py
-```
-
+## Components
 ### `Server`
 
 Responsible for:
