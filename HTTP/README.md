@@ -2,7 +2,7 @@
 
 A small HTTP/1.1 server written from scratch in C++ using WinSock and blocking TCP sockets.
 
-The goal of this project is not to build a production-ready web server. It is a hands-on exploration of how HTTP actually works on top of TCP — from accepting connections and receiving arbitrary byte streams to parsing request lines, headers, message bodies, chunked transfer encoding, and persistent connections.
+This is my first attempt at a hands-on exploration of how HTTP actually works on top of TCP, from accepting connections and receiving arbitrary byte streams to parsing request lines, headers, message bodies, chunked transfer encoding, and persistent connections.
 
 No HTTP library is used for request parsing or server functionality.
 
@@ -12,19 +12,13 @@ No HTTP library is used for request parsing or server functionality.
 * Blocking TCP sockets using WinSock
 * `WSAPoll()` for single-threaded connection multiplexing
 * Incremental request parsing using a finite-state machine
-* HTTP request-line parsing
-* Case-insensitive header-name handling
-* HTTP/1.1 `Host` validation
-* `Content-Length` request bodies
-* `Transfer-Encoding: chunked` request bodies
-* Chunk extensions
-* Chunk trailers
+* Both `Content-Length` and `chunked`request bodies
 * Keep-alive connections
 * Connection idle timeouts
 * Maximum connection and buffer limits
 * Basic method/path routing
 * Simple response builder API
-* Colored logging with configurable log levels
+* Simple logging with configurable log levels
 * A small Python-based protocol test harness
 
 ## Project Structure
