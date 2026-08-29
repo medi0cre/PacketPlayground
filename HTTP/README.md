@@ -39,37 +39,6 @@ Responsible for:
 
 The HTTP parser is implemented as a state machine.
 
-A request progresses through states such as:
-
-```text
-Request Line
-     │
-     ▼
-Method
-     │
-     ▼
-URI
-     │
-     ▼
-HTTP Version
-     │
-     ▼
-Headers
-     │
-     ▼
-Message Body
-     │
-     ├── Content-Length
-     │
-     └── Chunked
-           │
-           ▼
-        Trailers
-           │
-           ▼
-        Complete
-```
-
 The parser is designed to handle incomplete input because TCP provides a byte stream rather than discrete messages.
 
 For example, the following request does not have to arrive in a single `recv()` call:
