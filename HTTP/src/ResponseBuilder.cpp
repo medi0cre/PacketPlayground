@@ -4,7 +4,10 @@ PPG::Response PPG::ResponseBuilder::Build()
 {
     Res.Headers.emplace_back(StringKV { "Server", "PacketPlayground" });
     Res.Headers.emplace_back(StringKV { "Content-Length", std::to_string(Res.Body.size()) });
-    return Res;
+
+    Response Result = Res;
+    Res = {};
+    return Result;
 }
 
 PPG::ResponseBuilder& PPG::ResponseBuilder::Reset()
