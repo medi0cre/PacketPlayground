@@ -127,6 +127,7 @@ void PPG::Server::HandleNewConnection()
     Client.Socket.events = POLLIN;
     Client.Socket.revents = 0;
     Client.Par.State = ParseState::RequestLineStart;
+    Client.Par.Buffer.reserve(MaxBufferSize);
     Client.LastEvent = Clock::now();
     ConnectionList.emplace_back(Client);
 
