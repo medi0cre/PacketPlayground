@@ -28,25 +28,25 @@ namespace PPG
 
     struct Response
     {
-        uint16_t StatusCode = 0;
         std::string Status = "";
         std::string Version = "";
-        std::vector<StringKV> Headers{};
         std::string Body = "";
+        std::vector<StringKV> Headers{};
+        uint16_t StatusCode = 0;
     };
 
     struct Connection
     {
-        WSAPOLLFD Socket{};
         Parser Par{};
+        WSAPOLLFD Socket{};
         Time LastEvent{};
     };
 
     class Server
     {
     private:
-        std::vector<Connection> ConnectionList{};
         std::unordered_map<std::string, std::function<Response(const Request&)>> Routes{};
+        std::vector<Connection> ConnectionList{};
 
         std::string Stringify(const Response& Res);
         void HandleNewConnection();

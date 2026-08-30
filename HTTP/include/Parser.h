@@ -59,34 +59,34 @@ namespace PPG
 
     struct Request
     {
+        std::vector<SVKV> Headers{};
+        std::vector<SVKV> Trailers{};
+        std::vector<std::string_view> ChunkedBody{};
         std::string_view Method = "";
         std::string_view URI = "";
         std::string_view Path = "";
         std::string_view Query = "";
         std::string_view Version = "";
-        std::vector<SVKV> Headers{};
-        std::vector<SVKV> Trailers{};
         std::string_view Body = "";
         size_t ContentLength = 0;
-        std::vector<std::string_view> ChunkedBody{};
     };
 
     struct Chunk
     {
-        size_t Size = 0;
         std::string_view Data = "";
+        size_t Size = 0;
     };
 	
 	class Parser
     {
     public:
-        size_t Position = 0;
         Request Req{};
-        ParseState State = ParseState::RequestLineStart;
         std::string Buffer = "";
         SVKV CurrentHeader{};
         SVKV CurrentTrailer{};
         Chunk CurrentChunk{};
+        size_t Position = 0;
+        ParseState State = ParseState::RequestLineStart;
 
         Parser() = default;
         ~Parser() = default;
